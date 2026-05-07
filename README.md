@@ -14,9 +14,9 @@ SOCUD — это система для контроля, обработки и �
 ## 🛠 Стек технологий
 *Проект реализован в единой экосистеме на базе TypeScript (93.5%).*
 
-- **Frontend:** [INFERENCE] React.js / Next.js
-- **Backend:** [INFERENCE] Node.js (NestJS / Express / Fastify)
-- **AI Worker:** [INFERENCE] Node.js (LangChain.js, интеграция с LLM API, инструменты очередей типа BullMQ)
-- **База данных:** [INFERENCE] PostgreSQL (с поддержкой pgvector) + Object Storage (S3 / MinIO)
-- **Брокер сообщений:**[INFERENCE] Redis / RabbitMQ
-- **Контейнеризация:** Docker, Docker Compose
+- **Frontend:** React.js / Next.js
+- **Backend:**  Node.js (NestJS / Express / Fastify)
+- **AI Worker:**  Node.js (LangChain.js, интеграция с LLM API, инструменты очередей типа BullMQ)
+- **База данных:**  PostgreSQL (с поддержкой pgvector) + Object Storage (S3 / MinIO)
+- **Брокер сообщений:  Redis / RabbitMQ
+- **Контейнеризация:**  Docker, Docker Compose
