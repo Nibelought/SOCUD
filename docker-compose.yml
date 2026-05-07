@@ -1,0 +1,17 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.2-pg18-trixie
+    container_name: socud_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: dbsocud
+      POSTGRES_PASSWORD: check-socud
+      POSTGRES_DB: socud_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

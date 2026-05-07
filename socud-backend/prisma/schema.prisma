@@ -1,0 +1,125 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+model User {
+  id           String @id @default(uuid())
+  email        String @unique
+  passwordHash String
+
+  isSystemAdmin Boolean @default(false)
+
+  spaceMembers    SpaceMember[]
+  documentMembers DocumentMember[]
+
+  documentsAuthored Document[] @relation("DocumentAuthor")
+  documentsUpdated  Document[] @relation("DocumentUpdater")
+}
+
+model Space {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+
+  isArchived Boolean   @default(false)
+  archivedAt DateTime?
+
+  members   SpaceMember[]
+  documents Document[]
+}
+
+enum Role {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+model SpaceMember {
+  userId  String
+  spaceId String
+  role    Role
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, spaceId])
+  @@index([userId])
+}
+
+model DocumentMember {
+  userId     String
+  documentId String
+  role       Role
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, documentId])
+  @@index([documentId])
+}
+
+model Document {
+  id          String  @id @default(uuid())
+  spaceId     String
+  parentId    String?
+  title       String
+  contentHtml String?
+  yjsState    Bytes?
+
+  createdBy String
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  isArchived Boolean   @default(false)
+  archivedAt DateTime?
+
+  space   Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  author  User      @relation("DocumentAuthor", fields: [createdBy], references: [id])
+  updater User?     @relation("DocumentUpdater", fields: [updatedBy], references: [id])
+  parent  Document? @relation("DocumentHierarchy", fields: [parentId], references: [id])
+
+  children Document[]       @relation("DocumentHierarchy")
+  members  DocumentMember[]
+  chunks   DocumentChunk[]
+
+  sourceLinks DocumentLink[] @relation("SourceLinks")
+  targetLinks DocumentLink[] @relation("TargetLinks")
+
+  // IDOR
+  @@index([spaceId])
+  @@index([parentId])
+  @@index([isArchived])
+}
+
+model DocumentChunk {
+  id          String @id @default(uuid())
+  documentId  String
+  textContent String
+
+  embedding Unsupported("vector(768)")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  // HNSW
+  // vector_cosine_ops
+  @@index([embedding], map: "DocumentChunk_embedding_hnsw_idx")
+  @@index([documentId])
+}
+
+model DocumentLink {
+  sourceDocId String
+  targetDocId String
+
+  sourceDoc Document @relation("SourceLinks", fields: [sourceDocId], references: [id], onDelete: Cascade)
+  targetDoc Document @relation("TargetLinks", fields: [targetDocId], references: [id], onDelete: Cascade)
+
+  @@id([sourceDocId, targetDocId])
+  @@index([targetDocId]) // Quick search for incoming graph
+}
