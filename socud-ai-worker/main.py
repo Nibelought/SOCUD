@@ -1,9 +1,11 @@
 import re
+import secrets
 import torch
 import logging
 import asyncio
 from functools import partial
-from fastapi import FastAPI, HTTPException
+from typing import Optional
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 from typing import List
@@ -15,8 +17,11 @@ class Settings(BaseSettings):
     max_batch_size: int = 32
     max_text_length: int = 15000
     inference_batch_size: int = 16
-    host: str = "0.0.0.0"
+    # Loopback by default: the worker has no user authentication of its own.
+    host: str = "127.0.0.1"
     port: int = 8000
+    # Shared secret for POST /embed (header X-Worker-Token). Empty/unset = no token required.
+    worker_token: Optional[str] = None
 
     class Config:
         env_file = ".env"
@@ -73,8 +78,18 @@ def clean_content(text: str) -> str:
     text = re.sub(r'!\[[^\]]*\]\([^\)]+\)', '', text)
     text = re.sub(r'[*_#>-]', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
-    print(text)
     return text
+
+# --- Авторизация воркера ---
+def require_worker_token(x_worker_token: Optional[str] = Header(default=None)) -> None:
+    """Если задан WORKER_TOKEN, /embed требует совпадающий заголовок X-Worker-Token."""
+    expected = settings.worker_token
+    if not expected:
+        return
+    provided = x_worker_token or ""
+    # Сравнение в постоянном времени (байты, чтобы допускать не-ASCII значения)
+    if not secrets.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Invalid or missing worker token")
 
 # --- Роуты API ---
 @app.get("/health")
@@ -82,7 +97,7 @@ async def health_check():
     """Эндпоинт для оркестраторов (Docker/K8s)."""
     return {"status": "ok", "device": device, "model": settings.model_name}
 
-@app.post("/embed")
+@app.post("/embed", dependencies=[Depends(require_worker_token)])
 async def get_embeddings(req: EmbedRequest):
     try:
         prefix = "query: " if req.is_query else "passage: "
