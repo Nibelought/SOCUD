@@ -51,6 +51,12 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   AI_WORKER_URL: string = 'http://127.0.0.1:8000';
 
+  /** Shared secret sent as `X-Worker-Token` to the AI worker; must match the worker's WORKER_TOKEN. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  AI_WORKER_TOKEN?: string;
+
   /** Comma-separated list of allowed origins. */
   @IsOptional()
   @IsString()

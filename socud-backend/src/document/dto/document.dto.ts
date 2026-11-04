@@ -3,9 +3,10 @@ import {
   IsOptional,
   IsUUID,
   IsEnum,
-  IsBoolean,
   IsNotEmpty,
+  MaxLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { Role } from '@prisma/client';
 
 export class CreateDocumentDto {
@@ -20,22 +21,13 @@ export class CreateDocumentDto {
   title: string;
 }
 
+/** PATCH /document/:id accepts only the title; content goes through publish/Hocuspocus. */
 export class UpdateDocumentDto {
-  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  title?: string;
-
-  @IsOptional()
-  @IsString()
-  contentHtml?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isArchived?: boolean;
-
-  @IsOptional()
-  @IsUUID('4')
-  parentId?: string;
+  @IsNotEmpty()
+  @MaxLength(255)
+  title: string;
 }
 
 export class ManageDocumentMemberDto {

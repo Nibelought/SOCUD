@@ -17,6 +17,7 @@ import {
   CreateDocumentDto,
   ManageDocumentMemberDto,
   PublishDocumentDto,
+  UpdateDocumentDto,
 } from './dto/document.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -58,7 +59,10 @@ export class DocumentController {
 
   @Get(':id/members')
   @UseGuards(JwtAuthGuard)
-  async getMembers(@Param('id') documentId: string, @Request() req) {
+  async getMembers(
+    @Param('id', ParseUUIDPipe) documentId: string,
+    @Request() req,
+  ) {
     return this.documentService.getMembersWithInheritance(
       documentId,
       req.user.id,
@@ -68,11 +72,10 @@ export class DocumentController {
   @Post(':id/members')
   @UseGuards(JwtAuthGuard)
   async addMember(
-    @Param('id') documentId: string,
-    @Body() dto: any,
+    @Param('id', ParseUUIDPipe) documentId: string,
+    @Body() dto: ManageDocumentMemberDto,
     @Request() req,
   ) {
-    // Метод upsertDocumentMember уже есть в твоем document.service.ts
     return this.documentService.upsertDocumentMember(
       documentId,
       req.user.id,
@@ -83,8 +86,8 @@ export class DocumentController {
   @Delete(':id/members/:userId')
   @UseGuards(JwtAuthGuard)
   async removeMember(
-    @Param('id') documentId: string,
-    @Param('userId') targetUserId: string,
+    @Param('id', ParseUUIDPipe) documentId: string,
+    @Param('userId', ParseUUIDPipe) targetUserId: string,
     @Request() req,
   ) {
     return this.documentService.removeDocumentMember(
@@ -96,15 +99,15 @@ export class DocumentController {
 
   @Post(':id/archive')
   @UseGuards(JwtAuthGuard)
-  async archiveDoc(@Param('id') id: string, @Request() req) {
+  async archiveDoc(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
     return this.documentService.archive(id, req.user.id);
   }
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   async updateDocument(
-    @Param('id') id: string,
-    @Body() dto: { title?: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateDocumentDto,
     @Request() req,
   ) {
     return this.documentService.update(id, req.user.id, dto);
@@ -135,7 +138,7 @@ export class DocumentController {
   @Post(':id/publish')
   @UseGuards(JwtAuthGuard)
   async publish(
-    @Param('id') documentId: string,
+    @Param('id', ParseUUIDPipe) documentId: string,
     @Body() dto: PublishDocumentDto,
     @Request() req,
   ) {

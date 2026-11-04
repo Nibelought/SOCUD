@@ -2,6 +2,7 @@ import {
   Injectable,
   ForbiddenException,
   NotFoundException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +15,7 @@ import {
 } from './dto/document.dto';
 import { Prisma, Role } from '@prisma/client';
 import { compile } from 'html-to-text';
+import { sanitizeDocumentHtml } from '../common/html-sanitizer';
 
 @Injectable()
 export class DocumentService {
@@ -26,6 +28,18 @@ export class DocumentService {
   private get embedUrl(): string {
     const base = this.config.getOrThrow<string>('AI_WORKER_URL');
     return `${base.replace(/\/+$/, '')}/embed`;
+  }
+
+  /** Request timeout for the AI worker so a hung worker cannot block requests forever. */
+  private static readonly EMBED_TIMEOUT_MS = 15000;
+
+  private get embedHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const token = this.config.get<string>('AI_WORKER_TOKEN');
+    if (token) headers['X-Worker-Token'] = token;
+    return headers;
   }
 
   private async checkSpaceAccess(
@@ -70,16 +84,12 @@ export class DocumentService {
       },
     });
 
-    // 1. Проверка на существование и Soft Delete (isArchived)
-    if (!doc) throw new NotFoundException('Document not found');
-
-    // Если документ в архиве, изымаем право VIEWER из списка требуемых
-    let allowedRoles = requiredRoles;
-    if (doc.isArchived) {
-      allowedRoles = allowedRoles.filter((r) => r !== 'VIEWER');
-      if (allowedRoles.length === 0)
-        throw new NotFoundException('Document not found'); // VIEWER получает 404
-    }
+    // 1. Проверка на существование и Soft Delete (isArchived).
+    // Архивный документ (корзина) недоступен никому, включая OWNER пространства
+    // и системного администратора: чтение, правка, публикация, участники и WebSocket.
+    // Восстановление и жёсткое удаление выполняют собственные проверки (restoreDocument/remove).
+    if (!doc || doc.isArchived)
+      throw new NotFoundException('Document not found');
 
     // 2. Проверка на системного администратора
     const user = await this.prisma.user.findUnique({
@@ -120,6 +130,18 @@ export class DocumentService {
   async create(dto: CreateDocumentDto, userId: string) {
     await this.checkSpaceAccess(dto.spaceId, userId, [Role.OWNER, Role.EDITOR]);
 
+    if (dto.parentId) {
+      const parent = await this.prisma.document.findUnique({
+        where: { id: dto.parentId },
+        select: { spaceId: true, isArchived: true },
+      });
+      if (!parent || parent.spaceId !== dto.spaceId || parent.isArchived) {
+        throw new BadRequestException(
+          'Parent document must exist, belong to the same space and not be archived',
+        );
+      }
+    }
+
     return this.prisma.document.create({
       data: {
         title: dto.title,
@@ -159,7 +181,7 @@ export class DocumentService {
     const updatedDocument = await this.prisma.document.update({
       where: { id: documentId },
       data: {
-        ...dto,
+        title: dto.title.trim(),
         updatedBy: userId,
       },
     });
@@ -180,31 +202,11 @@ export class DocumentService {
     });
   }
 
-  // 2. Восстановление из архива (Для будущей Фазы 5)
-  async restore(documentId: string, _userId: string) {
-    // Запрос к БД напрямую, т.к. verifyDocumentAccess по умолчанию фильтрует isArchived: false
-    const doc = await this.prisma.document.findUnique({
-      where: { id: documentId },
-    });
-    if (!doc) throw new NotFoundException('Document not found');
-
-    // Тут нужна проверка прав OWNER, аналогично verifyDocumentAccess, но без фильтра isArchived
-    // Для краткости подразумевается, что проверка прав выполняется
-
-    return this.prisma.document.update({
-      where: { id: documentId },
-      data: {
-        isArchived: false,
-        archivedAt: null,
-      },
-    });
-  }
-
   // 3. Жесткое удаление (Hard Delete)
   async remove(documentId: string, userId: string) {
     // Убеждаемся, что удалять могут только OWNER.
-    // Примечание: Если документ УЖЕ архивирован, verifyDocumentAccess (из Фазы 1)
-    // выдаст 404. Если ты хочешь удалять из корзины, нужно адаптировать проверку.
+    // Примечание: verifyDocumentAccess возвращает 404 для архивных документов,
+    // поэтому здесь используется собственная проверка прав: удалять можно и из корзины.
 
     const doc = await this.prisma.document.findUnique({
       where: { id: documentId },
@@ -238,6 +240,12 @@ export class DocumentService {
     dto: ManageDocumentMemberDto,
   ) {
     await this.verifyDocumentAccess(documentId, authorId, [Role.OWNER]);
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: dto.userId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('User not found');
 
     return this.prisma.documentMember.upsert({
       where: { userId_documentId: { userId: dto.userId, documentId } },
@@ -296,22 +304,23 @@ export class DocumentService {
     userId: string,
     dto: PublishDocumentDto,
   ) {
-    this.logger.log(`[Publish] Doc: ${documentId} | HTML: ${dto.html}`);
-
     // 1. Проверка прав на запись (Только OWNER или EDITOR могут публиковать)
     await this.verifyDocumentAccess(documentId, userId, [
       'OWNER',
       'EDITOR',
     ] as any);
 
-    // 2. Парсинг ссылок: ищем паттерн /documents/UUID
+    // 2. Санитизация: в БД попадает только HTML из белого списка (защита от stored XSS)
+    const html = sanitizeDocumentHtml(dto.html);
+
+    // 3. Парсинг ссылок: ищем паттерн /documents/UUID
     // Поддерживает как относительные (/documents/uuid), так и абсолютные (http://.../documents/uuid) ссылки
     const hrefUuidRegex =
       /href="[^"]*?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})[^"]*?"/gi;
 
     const linkedDocIds = new Set<string>();
     let match;
-    while ((match = hrefUuidRegex.exec(dto.html)) !== null) {
+    while ((match = hrefUuidRegex.exec(html)) !== null) {
       const targetId = match[1];
       // Защита от создания ссылки на самого себя
       if (targetId !== documentId) {
@@ -320,22 +329,25 @@ export class DocumentService {
     }
 
     const uniqueLinks = Array.from(linkedDocIds);
-    this.logger.log(`[Publish] Extracted UUIDs: ${uniqueLinks.join(', ')}`);
+    // Никогда не логируем содержимое документа
+    this.logger.log(
+      `[Publish] Doc: ${documentId} | HTML length: ${html.length} | Links: ${uniqueLinks.length}`,
+    );
 
-    // 3. Транзакционное обновление БД
+    // 4. Транзакционное обновление БД
     await this.prisma.$transaction(async (prisma) => {
       // A. Обновляем HTML контент
       await prisma.document.update({
         where: { id: documentId },
         data: {
-          contentHtml: dto.html,
+          contentHtml: html,
           updatedBy: userId,
         },
       });
 
       try {
         const stripHtml = compile({ wordwrap: false });
-        const cleanText = stripHtml(dto.html);
+        const cleanText = stripHtml(html);
 
         // Простой чанкинг по абзацам (разбиваем по переносам строк)
         const chunks = cleanText
@@ -347,8 +359,9 @@ export class DocumentService {
           // Отправляем в Python Worker
           const aiRes = await fetch(this.embedUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: this.embedHeaders,
             body: JSON.stringify({ texts: chunks, is_query: false }),
+            signal: AbortSignal.timeout(DocumentService.EMBED_TIMEOUT_MS),
           });
           const aiData = await aiRes.json();
           const embeddings = aiData.embeddings;
@@ -431,8 +444,9 @@ export class DocumentService {
     try {
       const aiRes = await fetch(this.embedUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.embedHeaders,
         body: JSON.stringify({ texts: [query], is_query: true }), // is_query = true для E5
+        signal: AbortSignal.timeout(DocumentService.EMBED_TIMEOUT_MS),
       });
       const aiData = await aiRes.json();
       queryVectorStr = `[${aiData.embeddings[0].join(',')}]`;
@@ -447,16 +461,13 @@ export class DocumentService {
 
     // 3. СЕМАНТИЧЕСКИЙ ПОИСК (Топ 3)
     if (queryVectorStr) {
-      const semanticHits: any[] = await this.prisma.$queryRawUnsafe(
-        `
-        SELECT "documentId", "textContent", (1 - (embedding <=> $1::vector)) as score
+      const semanticHits: any[] = await this.prisma.$queryRaw`
+        SELECT "documentId", "textContent", (1 - (embedding <=> ${queryVectorStr}::vector)) as score
         FROM "DocumentChunk"
-        WHERE "documentId" IN (${accessibleDocIds.map((id) => `'${id}'`).join(',')})
-        ORDER BY embedding <=> $1::vector ASC
+        WHERE "documentId" IN (${Prisma.join(accessibleDocIds)})
+        ORDER BY embedding <=> ${queryVectorStr}::vector ASC
           LIMIT 3
-      `,
-        queryVectorStr,
-      );
+      `;
 
       for (const hit of semanticHits) {
         if (!usedDocIds.has(hit.documentId)) {

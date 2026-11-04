@@ -33,20 +33,39 @@ export function createConfigServiceMock(
 export function createPrismaServiceMock() {
   return {
     user: { findUnique: jest.fn(), create: jest.fn() },
-    space: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
+    space: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
     spaceMember: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
+      upsert: jest.fn(),
+      delete: jest.fn(),
+      count: jest.fn(),
     },
     document: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
     },
     documentMember: { upsert: jest.fn(), delete: jest.fn() },
+    documentChunk: { deleteMany: jest.fn() },
+    documentLink: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
     $transaction: jest.fn(),
   } as unknown as jest.Mocked<PrismaService>;
 }
