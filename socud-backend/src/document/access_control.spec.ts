@@ -32,7 +32,7 @@ describe('DocumentService Access Control', () => {
     }).compile();
 
     service = module.get<DocumentService>(DocumentService);
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   // Вспомогательная функция для генерации мока документа
@@ -82,7 +82,7 @@ describe('DocumentService Access Control', () => {
   });
 
   describe('Write Access & Role Conflicts (update - requires OWNER or EDITOR)', () => {
-    const updateDto: UpdateDocumentDto = { title: 'Updated' };
+    const updateDto: UpdateDocumentDto = { title: '  Updated ' };
 
     it('should allow update if user is Space EDITOR', async () => {
       mockPrisma.document.findUnique.mockResolvedValue(
@@ -95,6 +95,10 @@ describe('DocumentService Access Control', () => {
 
       const result = await service.update('doc-uuid', 'user-uuid', updateDto);
       expect(result.title).toEqual('Updated');
+      expect(mockPrisma.document.update).toHaveBeenCalledWith({
+        where: { id: 'doc-uuid' },
+        data: { title: 'Updated', updatedBy: 'user-uuid' },
+      });
     });
 
     it('should DENY update if user is Space VIEWER (Insufficient Space role)', async () => {
@@ -165,22 +169,47 @@ describe('DocumentService Access Control', () => {
   // Если тесты ниже падают, значит нужно обновить document.service.ts!
   // =====================================================================
   describe('TDD: Missing Core Features (Phase 1 Requirements)', () => {
-    // KNOWN PRODUCTION BUG (Phase 1): DocumentService.verifyDocumentAccess computes `allowedRoles`
-    // for archived documents but then checks `requiredRoles` everywhere, and Space OWNER / system
-    // admin return early, so an archived document is still readable. Remove `.failing` once fixed.
-    it.failing(
-      'should throw NotFoundException if document isArchived (Soft Delete)',
-      async () => {
-        // Мокаем документ, который существует, пользователь OWNER, но документ в архиве
-        mockPrisma.document.findUnique.mockResolvedValue(
-          mockDocumentResult(Role.OWNER, undefined, true),
-        );
+    // Rule: an archived document is in the trash and returns 404 for everyone,
+    // including space OWNERs and system admins.
+    it('should throw NotFoundException if document isArchived (Soft Delete)', async () => {
+      // Мокаем документ, который существует, пользователь OWNER, но документ в архиве
+      mockPrisma.document.findUnique.mockResolvedValue(
+        mockDocumentResult(Role.OWNER, undefined, true),
+      );
 
-        await expect(service.findOne('doc-uuid', 'user-uuid')).rejects.toThrow(
-          NotFoundException,
-        );
-      },
-    );
+      await expect(service.findOne('doc-uuid', 'user-uuid')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw NotFoundException for an archived document even for a space OWNER on write paths', async () => {
+      mockPrisma.document.findUnique.mockResolvedValue(
+        mockDocumentResult(Role.OWNER, undefined, true),
+      );
+
+      await expect(
+        service.update('doc-uuid', 'user-uuid', { title: 'x' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.document.update).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException for an archived document even for a system admin', async () => {
+      mockPrisma.document.findUnique.mockResolvedValue(
+        mockDocumentResult(undefined, undefined, true),
+      );
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'admin-uuid',
+        isSystemAdmin: true,
+      });
+
+      await expect(
+        service.verifyDocumentAccess('doc-uuid', 'admin-uuid', [
+          Role.OWNER,
+          Role.EDITOR,
+          Role.VIEWER,
+        ]),
+      ).rejects.toThrow(NotFoundException);
+    });
 
     // РАСКОММЕНТИРУЙТЕ ЭТОТ ТЕСТ, КОГДА ДОБАВИТЕ ЛОГИКУ isSystemAdmin
     it('should allow FULL access if user isSystemAdmin, even without Space/Document roles', async () => {

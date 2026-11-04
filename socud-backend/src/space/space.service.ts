@@ -2,10 +2,15 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSpaceDto } from './dto/space.dto';
-import { Role } from '@prisma/client';
+import {
+  CreateSpaceDto,
+  ManageSpaceMemberDto,
+  UpdateSpaceDto,
+} from './dto/space.dto';
+import { Prisma, Role } from '@prisma/client';
 
 @Injectable()
 export class SpaceService {
@@ -161,11 +166,7 @@ export class SpaceService {
     return { success: true };
   }
 
-  async updateSpace(
-    spaceId: string,
-    userId: string,
-    dto: { title?: string; description?: string },
-  ) {
+  async updateSpace(spaceId: string, userId: string, dto: UpdateSpaceDto) {
     // 1. Проверяем права (Только OWNER, EDITOR или SystemAdmin)
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
@@ -186,8 +187,8 @@ export class SpaceService {
 
     // 2. Формируем объект обновления.
     // Маппим title с фронтенда на поле name в базе данных (согласно твоему методу create)
-    const updateData: any = {};
-    if (dto.title !== undefined) updateData.name = dto.title;
+    const updateData: Prisma.SpaceUpdateInput = {};
+    if (dto.title !== undefined) updateData.name = dto.title.trim();
     if (dto.description !== undefined) updateData.description = dto.description;
 
     return this.prisma.space.update({
@@ -243,6 +244,161 @@ export class SpaceService {
       }
 
       return restoredSpace;
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Space membership management
+  // ---------------------------------------------------------------------
+
+  private async isSystemAdmin(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isSystemAdmin: true },
+    });
+    return user?.isSystemAdmin === true;
+  }
+
+  /** Throws 403 unless the user is a system admin or has one of `roles` in the space. */
+  private async assertSpaceRole(
+    spaceId: string,
+    userId: string,
+    roles: Role[],
+    message: string,
+  ): Promise<void> {
+    if (await this.isSystemAdmin(userId)) return;
+
+    const membership = await this.prisma.spaceMember.findUnique({
+      where: { userId_spaceId: { userId, spaceId } },
+    });
+    if (!membership || !roles.includes(membership.role)) {
+      throw new ForbiddenException(message);
+    }
+  }
+
+  private async assertSpaceExists(spaceId: string): Promise<void> {
+    const space = await this.prisma.space.findUnique({
+      where: { id: spaceId },
+      select: { id: true },
+    });
+    if (!space) throw new NotFoundException('Space not found');
+  }
+
+  private async assertUserExists(userId: string): Promise<void> {
+    const target = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('User not found');
+  }
+
+  /** Runs `fn` serializably so concurrent demotions cannot both pass the last-owner check. */
+  private async inMembershipTransaction<T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.prisma.$transaction(fn, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2034'
+      ) {
+        throw new ConflictException(
+          'The space membership was changed concurrently, please retry',
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async assertNotLastOwner(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    action: 'remove' | 'demote',
+  ): Promise<void> {
+    const owners = await tx.spaceMember.count({
+      where: { spaceId, role: Role.OWNER },
+    });
+    if (owners <= 1) {
+      throw new ConflictException(
+        `Cannot ${action} the last OWNER of a space. Assign another OWNER first.`,
+      );
+    }
+  }
+
+  async getMembers(spaceId: string, userId: string) {
+    await this.assertSpaceRole(
+      spaceId,
+      userId,
+      [Role.OWNER, Role.EDITOR, Role.VIEWER],
+      'You do not have access to this space',
+    );
+    await this.assertSpaceExists(spaceId);
+
+    return this.prisma.spaceMember.findMany({
+      where: { spaceId },
+      include: { user: { select: { id: true, email: true } } },
+    });
+  }
+
+  async upsertMember(
+    spaceId: string,
+    actorId: string,
+    dto: ManageSpaceMemberDto,
+  ) {
+    await this.assertSpaceRole(
+      spaceId,
+      actorId,
+      [Role.OWNER],
+      'Only space OWNERs can manage members',
+    );
+    await this.assertSpaceExists(spaceId);
+    await this.assertUserExists(dto.userId);
+
+    return this.inMembershipTransaction(async (tx) => {
+      const existing = await tx.spaceMember.findUnique({
+        where: { userId_spaceId: { userId: dto.userId, spaceId } },
+      });
+
+      if (existing?.role === Role.OWNER && dto.role !== Role.OWNER) {
+        await this.assertNotLastOwner(tx, spaceId, 'demote');
+      }
+
+      return tx.spaceMember.upsert({
+        where: { userId_spaceId: { userId: dto.userId, spaceId } },
+        update: { role: dto.role },
+        create: { userId: dto.userId, spaceId, role: dto.role },
+      });
+    });
+  }
+
+  async removeMember(spaceId: string, actorId: string, targetUserId: string) {
+    await this.assertSpaceRole(
+      spaceId,
+      actorId,
+      [Role.OWNER],
+      'Only space OWNERs can manage members',
+    );
+    await this.assertSpaceExists(spaceId);
+
+    return this.inMembershipTransaction(async (tx) => {
+      const existing = await tx.spaceMember.findUnique({
+        where: { userId_spaceId: { userId: targetUserId, spaceId } },
+      });
+      if (!existing) {
+        throw new NotFoundException('User is not a member of this space');
+      }
+
+      if (existing.role === Role.OWNER) {
+        await this.assertNotLastOwner(tx, spaceId, 'remove');
+      }
+
+      await tx.spaceMember.delete({
+        where: { userId_spaceId: { userId: targetUserId, spaceId } },
+      });
+      return { success: true };
     });
   }
 }
