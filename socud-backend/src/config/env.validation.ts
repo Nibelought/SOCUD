@@ -26,12 +26,6 @@ export class EnvironmentVariables {
   @MinLength(32, { message: 'JWT_SECRET must be at least 32 characters long' })
   JWT_SECRET: string;
 
-  @IsString()
-  @MinLength(32, {
-    message: 'JWT_REFRESH_SECRET must be at least 32 characters long',
-  })
-  JWT_REFRESH_SECRET: string;
-
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -50,6 +44,26 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   AI_WORKER_URL: string = 'http://127.0.0.1:8000';
+
+  /** Shared secret sent as `X-Worker-Token` to the AI worker; must match the worker's WORKER_TOKEN. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  AI_WORKER_TOKEN?: string;
+
+  /** Minimum interval between access re-validations of one Hocuspocus connection, in ms. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  ACCESS_RECHECK_MS: number = 15000;
+
+  /** Debounce before Hocuspocus persists a changed document, in ms. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  WS_STORE_DEBOUNCE_MS: number = 2000;
 
   /** Comma-separated list of allowed origins. */
   @IsOptional()
@@ -84,13 +98,6 @@ export function validateEnv(
       (message) => `  - ${error.property}: ${message}`,
     ),
   );
-
-  if (
-    validated.JWT_SECRET &&
-    validated.JWT_SECRET === validated.JWT_REFRESH_SECRET
-  ) {
-    problems.push('  - JWT_REFRESH_SECRET: must differ from JWT_SECRET');
-  }
 
   if (problems.length > 0) {
     throw new Error(

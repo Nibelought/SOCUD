@@ -28,6 +28,7 @@ import LatexEditorModal from "@/components/editor/LatexEditorModal"
 
 import { common, createLowlight } from 'lowlight';
 import { API_URL, WS_URL } from "@/lib/config";
+import { isSafeHref, SAFE_LINK_PROTOCOLS } from "@/lib/security";
 const lowlight = createLowlight(common);
 
 interface EditorProps {
@@ -362,6 +363,10 @@ const EditorToolbar = ({ editor, openLatexEditor }: { editor: any; openLatexEdit
         const url = window.prompt('URL (e.g. /documents/uuid):', previousUrl);
         if (url === null) return;
         if (url === '') { editor.chain().focus().extendMarkRange('link').unsetLink().run(); return; }
+        if (!isSafeHref(url)) {
+            alert('Unsafe or unsupported link. Use http(s), mailto, or a relative path.');
+            return;
+        }
         editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
     };
 
@@ -506,7 +511,8 @@ const EditorInner = ({ provider, ydoc, userName, userColor, activeUsers, current
         LinkExtension.configure({
             openOnClick: false,
             autolink: true,
-            validate: () => true,
+            protocols: SAFE_LINK_PROTOCOLS,
+            validate: isSafeHref,
             HTMLAttributes: { class: 'text-blue-600 underline hover:text-blue-800 transition-colors cursor-pointer' },
         }),
         Collaboration.configure({ document: ydoc }),

@@ -5,7 +5,6 @@ import { PrismaService } from '../prisma/prisma.service';
 export const TEST_ENV: Record<string, unknown> = {
   DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
   JWT_SECRET: 'test-access-secret-0123456789abcdef0123',
-  JWT_REFRESH_SECRET: 'test-refresh-secret-0123456789abcdef01',
   PORT: 3000,
   WS_PORT: 3002,
   AI_WORKER_URL: 'http://ai-worker.test',
@@ -33,20 +32,39 @@ export function createConfigServiceMock(
 export function createPrismaServiceMock() {
   return {
     user: { findUnique: jest.fn(), create: jest.fn() },
-    space: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
+    space: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
     spaceMember: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
+      upsert: jest.fn(),
+      delete: jest.fn(),
+      count: jest.fn(),
     },
     document: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       delete: jest.fn(),
     },
     documentMember: { upsert: jest.fn(), delete: jest.fn() },
+    documentChunk: { deleteMany: jest.fn() },
+    documentLink: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
     $transaction: jest.fn(),
   } as unknown as jest.Mocked<PrismaService>;
 }

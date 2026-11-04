@@ -9,9 +9,14 @@ import {
   Param,
   Delete,
   Patch,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { SpaceService } from './space.service';
-import { CreateSpaceDto } from './dto/space.dto';
+import {
+  CreateSpaceDto,
+  ManageSpaceMemberDto,
+  UpdateSpaceDto,
+} from './dto/space.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @UseGuards(JwtAuthGuard) // Все методы требуют валидный JWT
@@ -39,15 +44,15 @@ export class SpaceController {
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  async findOne(@Param('id') id: string, @Request() req) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
     return this.spaceService.findOne(id, req.user.id);
   }
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   async updateSpace(
-    @Param('id') id: string,
-    @Body() dto: { title?: string; description?: string },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSpaceDto,
     @Request() req,
   ) {
     // В сервисе: проверка прав OWNER/EDITOR, затем prisma.space.update
@@ -56,47 +61,42 @@ export class SpaceController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  async deleteSpace(@Param('id') id: string, @Request() req) {
+  async deleteSpace(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
     return this.spaceService.removeSpace(id, req.user.id);
   }
 
   @Get(':id/members')
   @UseGuards(JwtAuthGuard)
-  async getSpaceMembers(@Param('id') spaceId: string) {
-    return this.spaceService['prisma'].spaceMember.findMany({
-      where: { spaceId },
-      include: { user: { select: { id: true, email: true } } },
-    });
+  async getSpaceMembers(
+    @Param('id', ParseUUIDPipe) spaceId: string,
+    @Request() req,
+  ) {
+    return this.spaceService.getMembers(spaceId, req.user.id);
   }
 
   @Post(':id/members')
   @UseGuards(JwtAuthGuard)
   async addSpaceMember(
-    @Param('id') spaceId: string,
-    @Body() dto: { userId: string; role: any },
+    @Param('id', ParseUUIDPipe) spaceId: string,
+    @Body() dto: ManageSpaceMemberDto,
+    @Request() req,
   ) {
-    // Требуется права OWNER пространства (реализуй проверку в сервисе)
-    return this.spaceService['prisma'].spaceMember.upsert({
-      where: { userId_spaceId: { userId: dto.userId, spaceId } },
-      update: { role: dto.role },
-      create: { userId: dto.userId, spaceId, role: dto.role },
-    });
+    return this.spaceService.upsertMember(spaceId, req.user.id, dto);
   }
 
   @Delete(':id/members/:userId')
   @UseGuards(JwtAuthGuard)
   async removeSpaceMember(
-    @Param('id') spaceId: string,
-    @Param('userId') targetUserId: string,
+    @Param('id', ParseUUIDPipe) spaceId: string,
+    @Param('userId', ParseUUIDPipe) targetUserId: string,
+    @Request() req,
   ) {
-    return this.spaceService['prisma'].spaceMember.delete({
-      where: { userId_spaceId: { userId: targetUserId, spaceId } },
-    });
+    return this.spaceService.removeMember(spaceId, req.user.id, targetUserId);
   }
 
   @Post(':id/archive')
   @UseGuards(JwtAuthGuard)
-  async archiveSpace(@Param('id') id: string, @Request() req) {
+  async archiveSpace(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
     return this.spaceService.archiveSpace(id, req.user.id);
   }
 }
