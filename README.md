@@ -25,7 +25,8 @@ REST and WebSocket (Hocuspocus) run in the same NestJS process.
 Run every command from the repository root. Steps 3, 4, and 5 keep running, so use a separate terminal for each.
 
 ```bash
-# 1. Database (PostgreSQL + pgvector on port 5432)
+# 1. Database (PostgreSQL + pgvector, published on 127.0.0.1:5432 only)
+cp .env.example .env   # then set POSTGRES_PASSWORD in .env (compose refuses to start without it)
 docker compose up -d
 
 # 2. Backend: configure, install, generate the Prisma client, apply migrations
@@ -43,13 +44,23 @@ cd socud-frontend && cp .env.example .env.local && npm ci && npm run dev
 
 Then open http://localhost:3001.
 
-Before step 3, edit `socud-backend/.env` and set `JWT_SECRET` and `JWT_REFRESH_SECRET` to two different random strings of at least 32 characters. The database credentials in `.env.example` should match `docker-compose.yml`. The backend refuses to start if a required variable is missing or invalid.
+Before step 1, set `POSTGRES_PASSWORD` in the root `.env` (for example `openssl rand -hex 24`). Before step 3, edit `socud-backend/.env`: set `JWT_SECRET` to a random string of at least 32 characters (`openssl rand -hex 32`) and make `DATABASE_URL` match the root `.env` (`postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>`). The `DATABASE_URL` in `socud-backend/.env.example` still contains the old default password `check-socud`, so it must be changed. The backend refuses to start if a required variable is missing or invalid.
+
+An existing database volume keeps the password it was created with: `POSTGRES_PASSWORD` is applied only when the volume is first initialised. If you already have data from an earlier version, set `POSTGRES_PASSWORD=check-socud` (the old default) in the root `.env`, or change the password inside the database with `ALTER USER` and use the new one in both files.
 
 `socud-frontend/.npmrc` sets `legacy-peer-deps=true` because `@aarkue/tiptap-math-extension` declares a peer dependency on Tiptap 3 while the app uses Tiptap 2. Remove it once that dependency is aligned.
 
 ## Environment variables
 
-Each service ships an example file: `socud-backend/.env.example`, `socud-frontend/.env.example`, `socud-ai-worker/.env.example`.
+Each service ships an example file: `.env.example` (root, for Docker Compose), `socud-backend/.env.example`, `socud-frontend/.env.example`, `socud-ai-worker/.env.example`.
+
+### Root (`.env`, used by `docker-compose.yml`)
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `POSTGRES_USER` | no | `dbsocud` | Database user |
+| `POSTGRES_PASSWORD` | yes | none | Database password; `docker compose` refuses to start without it |
+| `POSTGRES_DB` | no | `socud_db` | Database name |
 
 ### Backend (`socud-backend/.env`)
 
@@ -57,10 +68,12 @@ Each service ships an example file: `socud-backend/.env.example`, `socud-fronten
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | none | PostgreSQL connection string |
 | `JWT_SECRET` | yes | none | Access token secret, at least 32 characters |
-| `JWT_REFRESH_SECRET` | yes | none | Refresh token secret, at least 32 characters, different from `JWT_SECRET` |
 | `PORT` | no | `3000` | REST API port |
 | `WS_PORT` | no | `3002` | Hocuspocus WebSocket port |
 | `AI_WORKER_URL` | no | `http://127.0.0.1:8000` | Base URL of the AI worker |
+| `AI_WORKER_TOKEN` | no | none | Sent to the worker as `X-Worker-Token`; must equal the worker's `WORKER_TOKEN` |
+| `ACCESS_RECHECK_MS` | no | `15000` | Minimum interval between access re-checks of an open Hocuspocus connection (positive integer, ms) |
+| `WS_STORE_DEBOUNCE_MS` | no | `2000` | Debounce before Hocuspocus saves a changed document (positive integer, ms) |
 | `CORS_ORIGIN` | no | `http://localhost:3001` | Allowed origin(s); comma-separated list allowed |
 | `NODE_ENV` | no | `development` | `development`, `production`, or `test` |
 
@@ -81,8 +94,9 @@ Both variables are inlined at build time, so rebuild after changing them.
 | `MAX_BATCH_SIZE` | no | `32` | Maximum texts per `/embed` request |
 | `MAX_TEXT_LENGTH` | no | `15000` | Maximum characters per text |
 | `INFERENCE_BATCH_SIZE` | no | `16` | Internal inference batch size |
-| `HOST` | no | `0.0.0.0` | Bind address |
+| `HOST` | no | `127.0.0.1` | Bind address (loopback; change only together with `WORKER_TOKEN` and a firewall or internal network) |
 | `PORT` | no | `8000` | Bind port |
+| `WORKER_TOKEN` | no | none | If set, `POST /embed` requires the header `X-Worker-Token: <value>` (`/health` stays open); set the same value as `AI_WORKER_TOKEN` in the backend |
 
 ## Common scripts
 
@@ -95,10 +109,22 @@ Both variables are inlined at build time, so rebuild after changing them.
 | `socud-backend` | `npm run build` | Production build |
 | `socud-frontend` | `npm run lint` | ESLint |
 | `socud-frontend` | `npm run typecheck` | TypeScript check |
+| `socud-frontend` | `npm test` | Unit tests (Vitest) |
 | `socud-frontend` | `npm run build` | Production build |
 | `socud-ai-worker` | `python -m py_compile main.py` | Syntax check |
 
 GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker on every push and pull request to `main`. The worker job runs only a syntax check and a minimal `ruff` lint, because installing its dependencies (PyTorch, model download) is too heavy for CI.
+
+## Security model
+
+- Access is role based: OWNER, EDITOR, or VIEWER per space, optional per-document overrides, and a system admin flag that bypasses membership checks. Only OWNERs (and admins) change members; the last OWNER of a space cannot be removed or demoted.
+- Archived documents return 404 for everyone. There is no restore endpoint yet (the UI's Restore button calls a route that does not exist), so an archived document can only be hard-deleted by an OWNER.
+- The refresh token is an opaque random value stored hashed in the database and sent in an httpOnly, SameSite=Strict cookie scoped to `/auth`. It rotates on every use, reuse of an old token revokes the whole session family, and a session lasts at most 30 days.
+- The access token (JWT, 15 minutes) is kept in `localStorage`.
+- Hocuspocus authenticates with the access token and re-checks access periodically (`ACCESS_RECHECK_MS`): revoked or archived documents are closed, role changes toggle read-only.
+- Document HTML is sanitized on the server when it is published and again in the browser (DOMPurify) when it is rendered; links are limited to http(s), mailto, relative, and `#`.
+- Rate limits per client IP: 100 requests per minute globally, 5 per minute for login and register.
+- The frontend sends a Content-Security-Policy and other security headers; the backend uses helmet and credentialed CORS limited to `CORS_ORIGIN`.
 
 ## Project layout
 
@@ -119,5 +145,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, f
 ## Known limitations
 
 - SOCUD is a prototype and is not production-ready.
-- A security hardening phase is planned and must be completed before any public deployment.
-- End-to-end tests require a running PostgreSQL instance (`docker compose up -d`).
+- The access token is still stored in `localStorage`, so an XSS bug would expose it.
+- Rate limiting is in-memory per process and keyed by client IP. Behind a reverse proxy every request appears to come from the proxy until `trust proxy` is configured, which is not done yet.
+- There is no email verification and no account lockout.
+- Hocuspocus listens on all interfaces without an Origin check. End-to-end tests (`npm run test:e2e`) need a running PostgreSQL instance.

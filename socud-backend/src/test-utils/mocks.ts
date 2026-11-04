@@ -5,7 +5,6 @@ import { PrismaService } from '../prisma/prisma.service';
 export const TEST_ENV: Record<string, unknown> = {
   DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
   JWT_SECRET: 'test-access-secret-0123456789abcdef0123',
-  JWT_REFRESH_SECRET: 'test-refresh-secret-0123456789abcdef01',
   PORT: 3000,
   WS_PORT: 3002,
   AI_WORKER_URL: 'http://ai-worker.test',

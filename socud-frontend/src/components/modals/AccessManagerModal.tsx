@@ -64,7 +64,7 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
         }
         const delay = setTimeout(async () => {
             const token = localStorage.getItem("socud_token");
-            const res = await fetch(`${API_URL}/auth/users/search?email=${searchEmail}`, {
+            const res = await fetch(`${API_URL}/auth/users/search?email=${encodeURIComponent(searchEmail)}`, {
                 headers: { "Authorization": `Bearer ${token}` }
             });
             if (res.ok) setSearchResults(await res.json());
@@ -91,13 +91,30 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
         if (!res.ok) alert("Failed to save changes. Check permissions.");
     };
 
+    // Текст ошибки из JSON-ответа бэкенда ({ message }); message может быть строкой или массивом.
+    const errorMessageFrom = async (res: Response, fallback: string) => {
+        try {
+            const body = await res.json();
+            if (Array.isArray(body?.message)) return body.message.join("\n");
+            if (typeof body?.message === "string" && body.message) return body.message;
+        } catch {
+            // тело не JSON
+        }
+        return fallback;
+    };
+
     const handleUpdateRole = async (userId: string, role: string) => {
         const token = localStorage.getItem("socud_token");
-        await fetch(`${baseUrl}/members`, {
+        const res = await fetch(`${baseUrl}/members`, {
             method: 'POST',
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
             body: JSON.stringify({ userId, role })
         });
+
+        if (!res.ok) {
+            alert(await errorMessageFrom(res, "Failed to update role."));
+            return;
+        }
 
         setMembers(prev => {
             const exists = prev.find(m => m.userId === userId);
@@ -109,10 +126,16 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
 
     const handleRemoveMember = async (userId: string) => {
         const token = localStorage.getItem("socud_token");
-        await fetch(`${baseUrl}/members/${userId}`, {
+        const res = await fetch(`${baseUrl}/members/${userId}`, {
             method: 'DELETE',
             headers: { "Authorization": `Bearer ${token}` }
         });
+
+        if (!res.ok) {
+            alert(await errorMessageFrom(res, "Failed to remove member."));
+            return;
+        }
+
         setMembers(prev => prev.filter(m => m.userId !== userId));
     };
 
