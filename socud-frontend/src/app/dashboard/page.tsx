@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Share2 } from "lucide-react";
 import SearchModal from "@/components/search/SearchModal";
-import { fetchWithAuth } from '@/lib/auth';
+import { fetchWithAuth, logout } from '@/lib/auth';
 import { API_URL } from "@/lib/config";
 
 // Типы ожидаемых данных с бэкенда
@@ -118,10 +118,7 @@ export default function DashboardPage() {
                     </button>
                 </div>
 
-                <div className="flex items-center gap-2 cursor-pointer hover:bg-blue-100 p-2 rounded-md transition-colors" onClick={() => {
-                    localStorage.removeItem("socud_token");
-                    router.push("/login");
-                }}>
+                <div className="flex items-center gap-2 cursor-pointer hover:bg-blue-100 p-2 rounded-md transition-colors" onClick={() => { void logout(); }}>
                     <div className="w-8 h-8 bg-slate-300 rounded-full flex items-center justify-center text-slate-600">
                         <User className="w-5 h-5" />
                     </div>

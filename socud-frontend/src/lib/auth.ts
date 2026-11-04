@@ -1,20 +1,29 @@
 import { API_URL } from './config';
 
 export const TOKEN_KEY = 'socud_token';
-export const REFRESH_KEY = 'socud_refresh_token';
-export const getTokens = () => ({
-    access: localStorage.getItem(TOKEN_KEY),
-    refresh: localStorage.getItem(REFRESH_KEY),
-});
+/** Legacy key: refresh tokens now live in an httpOnly cookie and are never visible to JS. */
+const LEGACY_REFRESH_KEY = 'socud_refresh_token';
 
-export const setTokens = (access: string, refresh: string) => {
+const isBrowser = typeof window !== 'undefined';
+
+// Remove any refresh token a previous version left in localStorage.
+if (isBrowser) {
+    try {
+        localStorage.removeItem(LEGACY_REFRESH_KEY);
+    } catch {
+        // storage unavailable (private mode etc.) - nothing to clean up
+    }
+}
+
+export const getAccessToken = (): string | null => localStorage.getItem(TOKEN_KEY);
+
+export const setAccessToken = (access: string) => {
     localStorage.setItem(TOKEN_KEY, access);
-    localStorage.setItem(REFRESH_KEY, refresh);
 };
 
 export const clearTokens = () => {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem(LEGACY_REFRESH_KEY);
 };
 
 export const isTokenExpired = (token: string): boolean => {
@@ -26,69 +35,72 @@ export const isTokenExpired = (token: string): boolean => {
     }
 };
 
-// Очередь запросов, ожидающих обновления токена
-let isRefreshing = false;
-let refreshSubscribers: Array<(token: string) => void> = [];
+// Single-flight: all callers that need a refresh while one is in progress share its result.
+let refreshInFlight: Promise<string | null> | null = null;
 
-const onRefreshed = (token: string) => refreshSubscribers.forEach(cb => cb(token));
-const addRefreshSubscriber = (cb: (token: string) => void) => refreshSubscribers.push(cb);
-
-export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-    const { access, refresh } = getTokens();
-
-    if (access) {
-        options.headers = {
-            ...options.headers,
-            Authorization: `Bearer ${access}`,
-        };
-    }
-
-    const response = await fetch(url, options);
-
-    // Если 401 и есть refresh-токен → пытаемся обновить
-    if (response.status === 401 && refresh) {
-        if (!isRefreshing) {
-            isRefreshing = true;
+/**
+ * Exchanges the httpOnly refresh cookie for a new access token (the server rotates the cookie).
+ * Resolves with the new access token, or null if the session cannot be refreshed.
+ * Never rejects, so every waiting caller is always released.
+ */
+export function refreshAccessToken(): Promise<string | null> {
+    if (!refreshInFlight) {
+        refreshInFlight = (async () => {
             try {
                 const res = await fetch(`${API_URL}/auth/refresh`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: refresh }),
+                    credentials: 'include',
                 });
-
-                if (!res.ok) throw new Error('Refresh failed');
-                const data = await res.json();
-                setTokens(data.access_token, data.refresh_token);
-                isRefreshing = false;
-                onRefreshed(data.access_token);
-                refreshSubscribers = [];
-
-                // Повторяем исходный запрос с новым токеном
-                options.headers = { ...options.headers, Authorization: `Bearer ${data.access_token}` };
-                return fetch(url, options);
+                if (!res.ok) return null;
+                const data: { access_token?: string } = await res.json();
+                if (!data.access_token) return null;
+                setAccessToken(data.access_token);
+                return data.access_token;
             } catch {
-                isRefreshing = false;
-                refreshSubscribers = [];
-                clearTokens();
-                if (typeof window !== 'undefined') window.location.href = '/login';
-                return response;
+                return null;
+            } finally {
+                refreshInFlight = null;
             }
-        }
+        })();
+    }
+    return refreshInFlight;
+}
 
-        // Если обновление уже идёт, ждём его завершения
-        return new Promise((resolve) => {
-            addRefreshSubscriber((newToken) => {
-                options.headers = { ...options.headers, Authorization: `Bearer ${newToken}` };
-                resolve(fetch(url, options));
-            });
+const redirectToLogin = () => {
+    if (isBrowser) window.location.href = '/login';
+};
+
+/** Revokes the session server-side (best effort), clears local state and goes to /login. */
+export async function logout(): Promise<void> {
+    try {
+        await fetch(`${API_URL}/auth/logout`, {
+            method: 'POST',
+            credentials: 'include',
         });
+    } catch {
+        // offline / server down: still drop the local session
     }
+    clearTokens();
+    redirectToLogin();
+}
 
-    // Если 401 и нет refresh-токена → выход
-    if (response.status === 401) {
-        clearTokens();
-        if (typeof window !== 'undefined') window.location.href = '/login';
-    }
+const withBearer = (options: RequestInit, token: string): RequestInit => {
+    const headers = new Headers(options.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    return { ...options, headers };
+};
 
+export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+    const access = getAccessToken();
+    const response = await fetch(url, access ? withBearer(options, access) : options);
+
+    if (response.status !== 401) return response;
+
+    // Access token missing/expired/revoked: try one cookie refresh, then retry once.
+    const newToken = await refreshAccessToken();
+    if (newToken) return fetch(url, withBearer(options, newToken));
+
+    clearTokens();
+    redirectToLogin();
     return response;
 }
