@@ -1,0 +1,321 @@
+@import 'tailwindcss';
+@plugin "@tailwindcss/typography";
+@import 'tailwindcss/utilities';
+
+/* FIX: Темная тема для читаемости кода */
+@import 'highlight.js/styles/github-dark.css';
+@import 'katex/dist/katex.min.css';
+
+/* Минималистичные курсоры соавторов */
+.collaboration-cursor__caret {
+    border-left: 2px solid #0d0d0d;
+    border-right: 2px solid #0d0d0d;
+    margin-left: -2px;
+    margin-right: -2px;
+    pointer-events: none;
+    position: relative;
+    word-break: normal;
+}
+
+.collaboration-cursor__label {
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    left: -2px;
+    line-height: normal;
+    padding: 0.1rem 0.3rem;
+    position: absolute;
+    top: -1.5em;
+    user-select: none;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+
+.collaboration-cursor__caret:hover .collaboration-cursor__label {
+    opacity: 1;
+}
+
+/* =========================================
+   СТРОГИЕ СТИЛИ РЕДАКТОРА (Overriding Tailwind Preflight)
+   ========================================= */
+.ProseMirror {
+    outline: none !important;
+    color: #1e293b; /* Темно-синий/серый для основного текста */
+}
+
+.ProseMirror h1 {
+    font-size: 2.25em;
+    font-weight: 800;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    line-height: 1.2;
+}
+
+.ProseMirror h2 {
+    font-size: 1.5em;
+    font-weight: 700;
+    margin-top: 1.2em;
+    margin-bottom: 0.5em;
+    line-height: 1.3;
+}
+
+.ProseMirror p {
+    margin-top: 0.75em;
+    margin-bottom: 0.75em;
+    line-height: 1.6;
+}
+
+.ProseMirror ul {
+    list-style-type: disc;
+    padding-left: 1.5em;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.ProseMirror ol {
+    list-style-type: decimal;
+    padding-left: 1.5em;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.ProseMirror blockquote {
+    border-left: 4px solid #cbd5e1;
+    padding-left: 1em;
+    color: #64748b;
+    font-style: italic;
+}
+
+/* Внутристрочный код (Inline Code) */
+.ProseMirror code {
+    background-color: #f1f5f9;
+    color: #db2777; /* Розовый для выделения на фоне текста */
+    padding: 0.2em 0.4em;
+    border-radius: 0.25rem;
+    font-size: 0.9em;
+    font-family: monospace;
+}
+
+/* Многострочный блок кода (Code Block) */
+.ProseMirror pre {
+    background: #0d1117; /* Глубокий темный фон */
+    color: #c9d1d9; /* Светло-серый текст */
+    padding: 1rem;
+    border-radius: 0.5rem;
+    font-family: monospace;
+    overflow-x: auto;
+    margin-top: 1em;
+    margin-bottom: 1em;
+}
+
+/* Сброс стилей для inline-code внутри блока кода */
+.ProseMirror pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: 0.9em;
+}
+
+/* =========================================
+   GAPCURSOR (Курсор между двумя блоками)
+   ========================================= */
+.ProseMirror-gapcursor {
+    display: none;
+    pointer-events: none;
+    position: absolute;
+    margin-top: 0.5rem;
+}
+
+.ProseMirror-gapcursor:after {
+    content: "";
+    display: block;
+    position: absolute;
+    top: -2px;
+    width: 100%;
+    max-width: 40px;
+    border-top: 2px solid #3b82f6; /* Синяя линия для заметности */
+    animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
+}
+
+@keyframes ProseMirror-cursor-blink {
+    to { visibility: hidden; }
+}
+
+.ProseMirror-focused .ProseMirror-gapcursor {
+    display: block;
+}
+
+/* =========================================
+   УЛУЧШЕННЫЙ UX ДЛЯ ФОРМУЛ (KaTeX + Tiptap)
+   ========================================= */
+.ProseMirror .math-inline {
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 4px;
+    padding: 1px 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ProseMirror .math-inline:hover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.ProseMirror .math-inline.ProseMirror-selectednode {
+    border-color: #3b82f6;
+    background: #dbeafe;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+.ProseMirror .math-display {
+    display: block;
+    margin: 1.2em 0;
+    padding: 0.6em;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ProseMirror .math-display:hover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.ProseMirror .math-display.ProseMirror-selectednode {
+    border-color: #3b82f6;
+    background: #dbeafe;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+/* Фикс рендеринга KaTeX внутри Tiptap */
+.katex { font-size: 1.05em !important; }
+.katex-display { margin: 0 !important; }
+.ProseMirror .katex-error {
+    color: #ef4444;
+    font-size: 0.85em;
+    font-family: monospace;
+    background: #fef2f2;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Улучшенный скролл для LaTeX-панели */
+.max-h-96::-webkit-scrollbar { width: 6px; }
+.max-h-96::-webkit-scrollbar-track { background: transparent; }
+.max-h-96::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.max-h-96::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+.ProseMirror .math-inline,
+.ProseMirror .math-display {
+    cursor: pointer !important;
+}
+.ProseMirror .math-inline:hover::after,
+.ProseMirror .math-display:hover::after {
+    content: "Double-click to edit";
+    position: absolute;
+    top: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e293b;
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.ProseMirror .math-inline:hover::after,
+.ProseMirror .math-display:hover::after {
+    opacity: 1;
+}
+
+/* Корректный display-режим для формул в Tiptap */
+.ProseMirror .math-display,
+.ProseMirror [class*="math"][display="true"],
+.ProseMirror .math-display-fallback {
+    display: block !important;
+    margin: 1.2em auto !important;
+    text-align: center !important;
+    padding: 0.6em !important;
+    background: #f8fafc !important;
+    border: 1px dashed #cbd5e1 !important;
+    border-radius: 6px !important;
+}
+
+/* KaTeX внутри блочных формул не должен иметь лишних отступов */
+.ProseMirror .math-display .katex-display,
+.ProseMirror .math-display-fallback .katex-display {
+    margin: 0 !important;
+    display: inline-block !important;
+}
+
+/* =========================================
+   ТИПОГРАФИКА РЕДАКТОРА (Фикс h3 и hr)
+   ========================================= */
+.ProseMirror h3 {
+    font-size: 1.5em !important;
+    font-weight: 700 !important;
+    margin-top: 1em !important;
+    margin-bottom: 0.5em !important;
+    line-height: 1.3 !important;
+    color: #1e293b !important;
+}
+
+.ProseMirror hr {
+    border: none !important;
+    border-top: 2px solid #cbd5e1 !important;
+    margin: 1.5em 0 !important;
+    width: 100% !important;
+}
+
+/* Фикс отступов для списков при вставке */
+.ProseMirror li {
+    margin-left: 1.5em !important;
+    list-style-type: disc !important;
+}
+
+/* =========================================
+   ФИКС ТИПОГРАФИКИ ДЛЯ СТРАНИЦЫ ПРОСМОТРА
+   ========================================= */
+.prose h1 { @apply text-3xl font-bold mt-8 mb-4 text-slate-900; }
+.prose h2 { @apply text-2xl font-bold mt-6 mb-3 text-slate-800; }
+.prose h3 { @apply text-xl font-bold mt-5 mb-2 text-slate-800; }
+.prose h4 { @apply text-lg font-semibold mt-4 mb-2 text-slate-700; }
+
+.prose hr {
+    @apply border-0 border-t-2 border-slate-200 my-8;
+}
+
+.prose blockquote {
+    @apply border-l-4 border-slate-300 pl-4 italic text-slate-600 my-4;
+}
+
+.prose code {
+    @apply bg-slate-100 text-pink-600 px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.prose pre {
+    @apply bg-[#0d1117] text-slate-200 p-4 rounded-lg overflow-x-auto my-4;
+}
+
+.prose pre code {
+    @apply bg-transparent text-inherit p-0 text-sm;
+}
+
+.prose ul { @apply list-disc pl-6 my-4; }
+.prose ol { @apply list-decimal pl-6 my-4; }
+.prose li { @apply my-1; }
+
+.prose a { @apply text-blue-600 underline hover:text-blue-800; }
+
+/* KaTeX внутри prose */
+.prose .katex { font-size: 1.05em !important; }
+.prose .katex-display { @apply my-6 overflow-x-auto; }
