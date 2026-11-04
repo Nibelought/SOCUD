@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { setTokens } from '@/lib/auth';
+import { setAccessToken } from '@/lib/auth';
 import { API_URL } from "@/lib/config";
 
 export default function LoginPage() {
@@ -23,6 +23,7 @@ export default function LoginPage() {
             const res = await fetch(`${API_URL}/auth/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify({ email, password }),
             });
 
@@ -32,8 +33,8 @@ export default function LoginPage() {
                 throw new Error(data.message || "Login failed");
             }
 
-            // ✅ 2. Заменяем ручную запись в localStorage на централизованную утилиту
-            setTokens(data.access_token, data.refresh_token);
+            // Refresh-токен приходит в httpOnly cookie; в localStorage хранится только access
+            setAccessToken(data.access_token);
 
             router.push("/dashboard");
         } catch (err: any) {

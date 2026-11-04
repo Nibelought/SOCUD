@@ -20,6 +20,31 @@ model User {
 
   documentsAuthored Document[] @relation("DocumentAuthor")
   documentsUpdated  Document[] @relation("DocumentUpdater")
+
+  refreshTokens RefreshToken[]
+}
+
+// Opaque, rotating refresh tokens. Only the SHA-256 hash of the raw token is stored.
+// All tokens descended from one login share a familyId so reuse can revoke the whole chain.
+model RefreshToken {
+  id               String    @id @default(uuid())
+  userId           String
+  tokenHash        String    @unique
+  familyId         String
+  expiresAt        DateTime
+  // Absolute cap for the whole family (copied to every successor), set at login.
+  sessionExpiresAt DateTime
+  // Set when the token was exchanged for a successor. Re-presenting it within a short
+  // grace window is a concurrent refresh (e.g. two tabs); later it counts as reuse.
+  rotatedAt        DateTime?
+  // Set only on logout / reuse detection (family revocation).
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
 }
 
 model Space {
