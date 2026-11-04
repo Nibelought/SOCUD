@@ -4,12 +4,14 @@ services:
     container_name: socud_postgres
     restart: always
     environment:
-      POSTGRES_USER: dbsocud
-      POSTGRES_PASSWORD: check-socud
-      POSTGRES_DB: socud_db
+      # Credentials come from the root .env file (see .env.example); the password has no default.
+      POSTGRES_USER: ${POSTGRES_USER:-dbsocud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-socud_db}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      # Loopback only: the database must not be reachable from the network.
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
