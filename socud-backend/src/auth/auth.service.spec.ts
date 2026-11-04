@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { createConfigServiceMock, TEST_ENV } from '../test-utils/mocks';
 import * as bcrypt from 'bcrypt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 
@@ -12,7 +14,11 @@ describe('AuthService', () => {
   let prisma: jest.Mocked<PrismaService>;
   let jwtService: jest.Mocked<JwtService>;
 
-  const mockUser = { id: 'user-123', email: 'test@example.com', passwordHash: 'hashed_password' };
+  const mockUser = {
+    id: 'user-123',
+    email: 'test@example.com',
+    passwordHash: 'hashed_password',
+  };
   const authDto = { email: 'test@mock.com', password: 'password123' };
 
   beforeEach(async () => {
@@ -34,6 +40,7 @@ describe('AuthService', () => {
             sign: jest.fn().mockReturnValue('mock_token'),
           },
         },
+        { provide: ConfigService, useValue: createConfigServiceMock() },
       ],
     }).compile();
 
@@ -49,7 +56,10 @@ describe('AuthService', () => {
   describe('register', () => {
     it('should register a new user successfully', async () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
-      (prisma.user.create as jest.Mock).mockResolvedValue({ id: 'user-123', email: authDto.email });
+      (prisma.user.create as jest.Mock).mockResolvedValue({
+        id: 'user-123',
+        email: authDto.email,
+      });
       (bcrypt.hash as jest.Mock).mockResolvedValue('hashed_password');
 
       const result = await service.register(authDto);
@@ -64,13 +74,18 @@ describe('AuthService', () => {
     it('should throw ConflictException if email already exists', async () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
 
-      await expect(service.register(authDto)).rejects.toThrow(ConflictException);
+      await expect(service.register(authDto)).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
   describe('login', () => {
-    it('should return access_token and user if credentials are valid', async () => {
-      const userWithHash = { ...mockUser, passwordHash: 'hashedCRPYTED_password' };
+    it('should return access_token, refresh_token and user if credentials are valid', async () => {
+      const userWithHash = {
+        ...mockUser,
+        passwordHash: 'hashedCRPYTED_password',
+      };
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(userWithHash);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
@@ -78,21 +93,34 @@ describe('AuthService', () => {
 
       expect(result).toEqual({
         access_token: 'mock_token',
+        refresh_token: 'mock_token',
         user: { id: mockUser.id, email: mockUser.email },
       });
+      // Refresh token must be signed with the dedicated refresh secret from config.
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: mockUser.id },
+        { expiresIn: '7d', secret: TEST_ENV.JWT_REFRESH_SECRET },
+      );
     });
 
     it('should throw UnauthorizedException if user does not exist', async () => {
       (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.login(authDto)).rejects.toThrow(UnauthorizedException);
+      await expect(service.login(authDto)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw UnauthorizedException if password is incorrect', async () => {
-      (prisma.user.findUnique as jest.Mock).mockResolvedValue({ ...mockUser, passwordHash: 'correct_hash' });
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
+        ...mockUser,
+        passwordHash: 'correct_hash',
+      });
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-      await expect(service.login(authDto)).rejects.toThrow(UnauthorizedException);
+      await expect(service.login(authDto)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });

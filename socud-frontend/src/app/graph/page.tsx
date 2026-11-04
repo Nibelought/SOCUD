@@ -6,6 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { fetchWithAuth } from '@/lib/auth';
+import { API_URL } from "@/lib/config";
 
 // КРИТИЧЕСКИ ВАЖНО: Отключаем SSR
 const DynamicGraph = dynamic(
@@ -22,7 +23,7 @@ export default function KnowledgeGraphPage() {
         const token = localStorage.getItem("socud_token");
         if (!token) return router.push("/login");
 
-        fetchWithAuth("http://localhost:3000/document/graph")
+        fetchWithAuth(`${API_URL}/document/graph`)
             .then(res => res.json())
             .then(data => {
                 setGraphData(data);

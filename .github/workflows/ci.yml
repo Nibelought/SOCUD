@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (NestJS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: socud-backend
+    env:
+      # Dummy values for CI only: unit tests and build do not connect to a database.
+      DATABASE_URL: postgresql://ci:ci-dummy-password@localhost:5432/ci_dummy_db
+      JWT_SECRET: ci-dummy-jwt-secret-not-for-real-use-0123456789
+      JWT_REFRESH_SECRET: ci-dummy-refresh-secret-not-for-real-use-9876543210
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: socud-backend/package-lock.json
+
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint:ci
+      - run: npm run typecheck
+      - run: npm test -- --ci
+      - run: npm run build
+
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: socud-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: socud-frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
+  ai-worker:
+    name: AI worker (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: socud-ai-worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Requirements are not installed on purpose: torch is several GB and
+      # importing main.py downloads the model. Only static checks run here.
+      - name: Syntax check
+        run: python -m py_compile main.py
+
+      - name: Lint (syntax errors and undefined names only)
+        run: |
+          pip install ruff
+          ruff check --select E9,F63,F7,F82 .

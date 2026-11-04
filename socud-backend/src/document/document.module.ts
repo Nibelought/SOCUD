@@ -4,7 +4,7 @@ import { DocumentController } from './document.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-  imports:[PrismaModule],
+  imports: [PrismaModule],
   controllers: [DocumentController],
   providers: [DocumentService],
   exports: [DocumentService], // КРИТИЧЕСКИ ВАЖНО: Делает сервис публичным для других модулей

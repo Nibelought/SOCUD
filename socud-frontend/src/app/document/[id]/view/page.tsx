@@ -6,6 +6,7 @@ import { fetchWithAuth } from "@/lib/auth";
 import { ArrowLeft, Edit3, Loader2 } from "lucide-react";
 import Link from "next/link";
 import katex from 'katex';
+import { API_URL } from "@/lib/config";
 
 interface DocumentData {
     id: string;
@@ -29,7 +30,7 @@ export default function DocumentViewPage() {
     useEffect(() => {
         const loadDocument = async () => {
             try {
-                const res = await fetchWithAuth(`http://localhost:3000/document/${docId}`);
+                const res = await fetchWithAuth(`${API_URL}/document/${docId}`);
                 if (!res.ok) throw new Error(res.status === 404 ? "Документ не найден" : "Нет доступа");
                 const data = await res.json();
                 setDoc(data);
@@ -119,7 +120,7 @@ export default function DocumentViewPage() {
                             trust: true,
                             strict: false,
                         });
-                    } catch(e) {
+                    } catch {
                         span.textContent = match;
                     }
                     fragment.appendChild(span);

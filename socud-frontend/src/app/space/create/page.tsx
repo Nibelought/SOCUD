@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Shield, ArrowLeft } from "lucide-react";
+import { API_URL } from "@/lib/config";
 
 export default function CreateSpacePage() {
     const router = useRouter();
@@ -21,7 +22,7 @@ export default function CreateSpacePage() {
         if (!token) return router.push("/login");
 
         try {
-            const res = await fetch("http://localhost:3000/space", {
+            const res = await fetch(`${API_URL}/space`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

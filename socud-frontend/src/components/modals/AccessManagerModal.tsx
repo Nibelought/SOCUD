@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, Search, ShieldAlert, Trash2, Archive, Loader2, RefreshCw, Save } from "lucide-react";
+import { API_URL } from "@/lib/config";
 
 interface AccessModalProps {
     isOpen: boolean;
@@ -34,7 +35,7 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
     const [loadingData, setLoadingData] = useState(true);
     const [actionLoading, setActionLoading] = useState<'archive' | 'restore' | 'delete' | 'save' | null>(null);
 
-    const baseUrl = `http://localhost:3000/${entityType}/${entityId}`;
+    const baseUrl = `${API_URL}/${entityType}/${entityId}`;
 
     useEffect(() => {
         if (!isOpen) return;
@@ -63,7 +64,7 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
         }
         const delay = setTimeout(async () => {
             const token = localStorage.getItem("socud_token");
-            const res = await fetch(`http://localhost:3000/auth/users/search?email=${searchEmail}`, {
+            const res = await fetch(`${API_URL}/auth/users/search?email=${searchEmail}`, {
                 headers: { "Authorization": `Bearer ${token}` }
             });
             if (res.ok) setSearchResults(await res.json());
@@ -153,7 +154,6 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
     if (!isOpen) return null;
 
     const ownersCount = members.filter(m => m.role === 'OWNER').length;
-    const isCurrentUserOwner = members.find(m => m.userId === currentUserId)?.role === 'OWNER';
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm px-4">

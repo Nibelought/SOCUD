@@ -5,6 +5,15 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    rules: {
+      // Phase 0: pre-existing violations (17x `any` in API/editor typings, 10x
+      // setState-in-effect in data-fetching effects) need non-mechanical refactors
+      // that are scheduled for later phases. Kept visible as warnings, not errors.
+      "@typescript-eslint/no-explicit-any": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

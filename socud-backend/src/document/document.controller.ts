@@ -1,6 +1,23 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Put, UseGuards, Request, ParseUUIDPipe, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Put,
+  UseGuards,
+  Request,
+  ParseUUIDPipe,
+  Query,
+} from '@nestjs/common';
 import { DocumentService } from './document.service';
-import { CreateDocumentDto, UpdateDocumentDto, ManageDocumentMemberDto, PublishDocumentDto } from './dto/document.dto';
+import {
+  CreateDocumentDto,
+  ManageDocumentMemberDto,
+  PublishDocumentDto,
+} from './dto/document.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @UseGuards(JwtAuthGuard)

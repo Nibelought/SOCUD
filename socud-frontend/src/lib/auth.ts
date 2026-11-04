@@ -1,7 +1,7 @@
+import { API_URL } from './config';
+
 export const TOKEN_KEY = 'socud_token';
 export const REFRESH_KEY = 'socud_refresh_token';
-const API_URL = 'http://localhost:3000';
-
 export const getTokens = () => ({
     access: localStorage.getItem(TOKEN_KEY),
     refresh: localStorage.getItem(REFRESH_KEY),
@@ -43,7 +43,7 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}): Pro
         };
     }
 
-    let response = await fetch(url, options);
+    const response = await fetch(url, options);
 
     // Если 401 и есть refresh-токен → пытаемся обновить
     if (response.status === 401 && refresh) {

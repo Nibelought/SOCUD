@@ -1,9 +1,12 @@
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { parseCorsOrigins } from './config/env.validation';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
 
   // Активация строгой валидации
   app.useGlobalPipes(
@@ -14,9 +17,15 @@ async function bootstrap() {
     }),
   );
 
-  // Включение CORS для будущей работы с Frontend
-  app.enableCors();
+  // CORS: разрешены только origin-ы из CORS_ORIGIN (список через запятую)
+  app.enableCors({
+    origin: parseCorsOrigins(config.getOrThrow<string>('CORS_ORIGIN')),
+  });
 
-  await app.listen(3000);
+  await app.listen(config.getOrThrow<number>('PORT'));
 }
-bootstrap();
+
+bootstrap().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

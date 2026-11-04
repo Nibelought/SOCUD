@@ -12,7 +12,7 @@ interface GraphData {
 
 export default function GraphVisualizer({ data }: { data: GraphData }) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const graphRef = useRef<ForceGraphMethods>();
+    const graphRef = useRef<ForceGraphMethods | undefined>(undefined);
     const router = useRouter();
 
     const[dimensions, setDimensions] = useState({ width: 0, height: 0 });

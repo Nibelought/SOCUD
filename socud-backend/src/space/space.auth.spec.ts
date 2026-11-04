@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SpaceService } from './space.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
+import { createPrismaServiceMock } from '../test-utils/mocks';
 
 describe('Space Authorization', () => {
   let service: SpaceService;
@@ -14,18 +15,7 @@ describe('Space Authorization', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SpaceService,
-        {
-          provide: PrismaService,
-          useValue: {
-            space: {
-              create: jest.fn(),
-              findMany: jest.fn(),
-            },
-            spaceMember: {
-              findFirst: jest.fn(),
-            },
-          } as any,
-            },
+        { provide: PrismaService, useValue: createPrismaServiceMock() },
       ],
     }).compile();
 
@@ -36,25 +26,27 @@ describe('Space Authorization', () => {
   describe('create', () => {
     it('should create a space and assign the creator as OWNER', async () => {
       const dto = { name: 'New Space', description: 'A test space' };
-      (prisma.space.create as jest.Mock).mockResolvedValue({ id: spaceId, ...dto });
+      (prisma.space.create as jest.Mock).mockResolvedValue({
+        id: spaceId,
+        ...dto,
+      });
+      // The service wraps both writes in $transaction; run the callback against the same mock.
+      (prisma.$transaction as jest.Mock).mockImplementation((cb) => cb(prisma));
 
       const result = await service.create(dto, userId);
 
       expect(result).toBeDefined();
       expect(prisma.space.create).toHaveBeenCalledWith({
-        data: {
-          name: dto.name,
-          description: dto.description,
-          members: {
-            create: { userId, role: Role.OWNER },
-          },
-        },
+        data: { name: dto.name, description: dto.description },
+      });
+      expect(prisma.spaceMember.create).toHaveBeenCalledWith({
+        data: { spaceId, userId, role: Role.OWNER },
       });
     });
   });
 
   describe('findAllForUser', () => {
-    it('should return only space where the user is a member', async () AS any) {
+    it('should return only space where the user is a member', async () => {
       const mockSpaces = [
         { id: 'space-1', name: 'Space 1' },
         { id: 'space-2', name: 'Space 2' },
@@ -75,7 +67,7 @@ describe('Space Authorization', () => {
     });
 
     it('should return an empty array if the user is not in any space', async () => {
-      (prisma.space.findMany as jest.Mock).mockResolvedlyValue([]);
+      (prisma.space.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await service.findAllForUser(userId);
 

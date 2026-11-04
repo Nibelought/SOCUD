@@ -1,4 +1,15 @@
-import { Controller, Post, Get, Body, UseGuards, Req, Request, Param, Delete, Patch } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Req,
+  Request,
+  Param,
+  Delete,
+  Patch,
+} from '@nestjs/common';
 import { SpaceService } from './space.service';
 import { CreateSpaceDto } from './dto/space.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -51,7 +62,7 @@ export class SpaceController {
 
   @Get(':id/members')
   @UseGuards(JwtAuthGuard)
-  async getSpaceMembers(@Param('id') spaceId: string, @Request() req) {
+  async getSpaceMembers(@Param('id') spaceId: string) {
     return this.spaceService['prisma'].spaceMember.findMany({
       where: { spaceId },
       include: { user: { select: { id: true, email: true } } },
@@ -63,7 +74,6 @@ export class SpaceController {
   async addSpaceMember(
     @Param('id') spaceId: string,
     @Body() dto: { userId: string; role: any },
-    @Request() req,
   ) {
     // Требуется права OWNER пространства (реализуй проверку в сервисе)
     return this.spaceService['prisma'].spaceMember.upsert({
@@ -78,7 +88,6 @@ export class SpaceController {
   async removeSpaceMember(
     @Param('id') spaceId: string,
     @Param('userId') targetUserId: string,
-    @Request() req,
   ) {
     return this.spaceService['prisma'].spaceMember.delete({
       where: { userId_spaceId: { userId: targetUserId, spaceId } },

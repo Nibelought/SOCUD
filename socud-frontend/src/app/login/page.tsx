@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {fetchWithAuth} from "@/lib/auth";
 import { setTokens } from '@/lib/auth';
+import { API_URL } from "@/lib/config";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -20,7 +20,7 @@ export default function LoginPage() {
         setError("");
 
         try {
-            const res = await fetch("http://localhost:3000/auth/login", {
+            const res = await fetch(`${API_URL}/auth/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password }),
@@ -79,7 +79,7 @@ export default function LoginPage() {
                     </button>
                 </form>
                 <div className="mt-4 text-center text-sm text-gray-600">
-                    Don't have an account? <Link href="/register" className="text-blue-600 hover:underline">Sign up</Link>
+                    Don&apos;t have an account? <Link href="/register" className="text-blue-600 hover:underline">Sign up</Link>
                 </div>
             </div>
         </div>

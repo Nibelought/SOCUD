@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, ArrowLeft, Loader2 } from "lucide-react";
 import {fetchWithAuth} from "@/lib/auth";
+import { API_URL } from "@/lib/config";
 
 interface Space {
     id: string;
-    title: string;
+    name: string;
 }
 
 export default function CreateDocumentPage() {
@@ -26,7 +27,7 @@ export default function CreateDocumentPage() {
             if (!token) return router.push("/login");
 
             try {
-                const res = await fetchWithAuth("http://localhost:3000/space/my");
+                const res = await fetchWithAuth(`${API_URL}/space/my`);
                 if (!res.ok) throw new Error("Failed to load spaces");
 
                 const data = await res.json();
@@ -47,11 +48,9 @@ export default function CreateDocumentPage() {
         setSubmitting(true);
         setError("");
 
-        const token = localStorage.getItem("socud_token");
-
         try {
             // POST запрос к DocumentModule (из твоей Фазы 1: dto.title, dto.spaceId)
-            const res = await fetchWithAuth("http://localhost:3000/document", {
+            const res = await fetchWithAuth(`${API_URL}/document`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ title, spaceId }),
@@ -97,7 +96,7 @@ export default function CreateDocumentPage() {
 
                 {spaces.length === 0 ? (
                     <div className="text-center p-6 border border-dashed border-slate-300 rounded-md">
-                        <p className="text-slate-600 mb-4">You don't have any spaces yet. Documents must be placed inside a space.</p>
+                        <p className="text-slate-600 mb-4">You don&apos;t have any spaces yet. Documents must be placed inside a space.</p>
                         <Link href="/space/create" className="text-blue-600 font-medium hover:underline">
                             Create a Space first
                         </Link>

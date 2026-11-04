@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, Loader2, Sparkles, Text, ArrowRight, FileText } from "lucide-react";
+import { Search, X, Loader2, Sparkles, Text, FileText } from "lucide-react";
+import { API_URL } from "@/lib/config";
 
 interface SearchResult {
     id: string;
@@ -59,7 +60,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
         const delayDebounceFn = setTimeout(async () => {
             try {
                 const token = localStorage.getItem("socud_token");
-                const res = await fetch(`http://localhost:3000/document/search?q=${encodeURIComponent(query)}`, {
+                const res = await fetch(`${API_URL}/document/search?q=${encodeURIComponent(query)}`, {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
 
@@ -106,7 +107,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
                 <div className="overflow-y-auto flex-1 p-2">
                     {query.trim() && !loading && results.length === 0 && (
                         <div className="p-8 text-center text-slate-500">
-                            No knowledge found matching "{query}".
+                            No knowledge found matching &quot;{query}&quot;.
                         </div>
                     )}
 

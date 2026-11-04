@@ -16,7 +16,6 @@ import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { DOMParser as PMDOMParser } from '@tiptap/pm/model';
 import { useRouter } from 'next/navigation';
 import {
     Loader2, Globe, Users, Eye, Edit2, Settings,
@@ -28,6 +27,7 @@ import AccessManagerModal from '@/components/modals/AccessManagerModal';
 import LatexEditorModal from "@/components/editor/LatexEditorModal"
 
 import { common, createLowlight } from 'lowlight';
+import { API_URL, WS_URL } from "@/lib/config";
 const lowlight = createLowlight(common);
 
 interface EditorProps {
@@ -141,22 +141,6 @@ const LATEX_SNIPPETS = {
     ]
 };
 
-const markdownToHtml = (text: string): string => {
-    if (!text.trim()) return '';
-    return text
-        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-        .replace(/^(?:---|___|\*\*\*)$/gim, '<hr>')
-        .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-        .replace(/~~(.*?)~~/gim, '<s>$1</s>')
-        .replace(/`(.*?)`/gim, '<code>$1</code>')
-        .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
-        .replace(/(?:^|\n)- (.*$)/gim, '<ul><li>$1</li></ul>')
-        .replace(/\n/gim, '<br>');
-};
-
 const PasteMarkdown = Extension.create({
     name: 'pasteMarkdown',
     addProseMirrorPlugins() {
@@ -224,7 +208,7 @@ const PasteMarkdown = Extension.create({
                             }
 
                             // Обрабатываем инлайн-стили внутри обычных абзацев
-                            let parsed = p
+                            const parsed = p
                                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                                 .replace(/\*(.*?)\*/g, '<em>$1</em>')
                                 .replace(/~~(.*?)~~/g, '<s>$1</s>')
@@ -292,7 +276,6 @@ const MarkdownShortcuts = Extension.create({
 });
 
 const EditorToolbar = ({ editor, openLatexEditor }: { editor: any; openLatexEditor: (latex?: string, display?: boolean) => void }) => {
-    if (!editor) return null;
     const [showLatexPanel, setShowLatexPanel] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
 
@@ -303,6 +286,8 @@ const EditorToolbar = ({ editor, openLatexEditor }: { editor: any; openLatexEdit
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    if (!editor) return null;
 
     const toggleBtnClass = (isActive: boolean) =>
         `p-1.5 rounded-md transition-colors ${isActive ? 'bg-slate-200 text-blue-600' : 'text-slate-600 hover:bg-slate-100'}`;
@@ -449,7 +434,7 @@ const createMathDoubleClickExtension = (onEdit: (latex: string, isDisplay: boole
             return [
                 new Plugin({
                     props: {
-                        handleDoubleClickOn(view, pos, node, nodePos, event) {
+                        handleDoubleClickOn(view, pos, node, nodePos) {
                             const name = node.type.name.toLowerCase();
                             // Срабатывает на любой узел, содержащий 'math' в имени
                             if (name.includes('math')) {
@@ -504,8 +489,9 @@ const EditorInner = ({ provider, ydoc, userName, userColor, activeUsers, current
         StarterKit.configure({
             history: false,
             codeBlock: false,
-            heading: { inputRules: false },       // ← Делегируем MarkdownShortcuts
-            horizontalRule: { inputRules: false } // ← Делегируем MarkdownShortcuts
+            // `inputRules` is not in the typed options; spread keeps runtime config identical.
+            heading: { ...({ inputRules: false } as object) },       // ← Делегируем MarkdownShortcuts
+            horizontalRule: { ...({ inputRules: false } as object) } // ← Делегируем MarkdownShortcuts
         }),
         Markdown,
         MarkdownShortcuts,
@@ -513,8 +499,7 @@ const EditorInner = ({ provider, ydoc, userName, userColor, activeUsers, current
         MathExtension.configure({
             evaluation: false, // Безопасность: отключаем выполнение JS внутри формул
             // Включение авто-преобразования при вводе $...$ + пробел
-            addInputRules: true,
-            addDisplayMath: true,
+            ...({ addInputRules: true, addDisplayMath: true } as object), // not in typed options; kept as-is at runtime
         }),
         CodeBlockLowlight.configure({ lowlight }),
         CodeBlockUX,
@@ -545,7 +530,7 @@ const EditorInner = ({ provider, ydoc, userName, userColor, activeUsers, current
         try {
             const token = localStorage.getItem("socud_token");
             const docId = provider.configuration.name;
-            const res = await fetch(`http://localhost:3000/document/${docId}/publish`, {
+            const res = await fetch(`${API_URL}/document/${docId}/publish`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
                 body: JSON.stringify({ html }),
@@ -648,17 +633,17 @@ export default function DocumentEditor({ documentId, token, userName, userColor,
     useEffect(() => {
         let isMounted = true;
         const newProvider = new HocuspocusProvider({
-            url: `ws://127.0.0.1:3002`,
+            url: WS_URL,
             name: documentId,
             document: ydoc,
             token: token,
             onStatus: ({ status }) => { if (isMounted) setStatus(status); },
         });
 
-        newProvider.awareness.on('change', () => {
+        newProvider.awareness!.on('change', () => {
             if (!isMounted) return;
-            const states = Array.from(newProvider.awareness.getStates().entries());
-            const users = states.filter(([_, state]) => state?.user?.name).map(([clientId, state]) => ({
+            const states = Array.from(newProvider.awareness!.getStates().entries());
+            const users = states.filter(([, state]) => state?.user?.name).map(([clientId, state]) => ({
                 clientId, name: state.user.name, color: state.user.color,
             }));
             setActiveUsers(users);

@@ -1,4 +1,11 @@
-import { IsString, IsOptional, IsUUID, IsEnum, IsBoolean, IsNotEmpty  } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUUID,
+  IsEnum,
+  IsBoolean,
+  IsNotEmpty,
+} from 'class-validator';
 import { Role } from '@prisma/client';
 
 export class CreateDocumentDto {

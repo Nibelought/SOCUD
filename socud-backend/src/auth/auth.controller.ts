@@ -21,7 +21,7 @@ export class AuthController {
   async refresh(@Body('refresh_token') refreshToken: string) {
     return this.authService.refreshTokens(refreshToken);
   }
-  
+
   @Get('users/search')
   @UseGuards(JwtAuthGuard)
   async searchUsers(@Query('email') email: string) {

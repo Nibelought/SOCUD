@@ -10,6 +10,7 @@ import {
 import { Share2 } from "lucide-react";
 import SearchModal from "@/components/search/SearchModal";
 import { fetchWithAuth } from '@/lib/auth';
+import { API_URL } from "@/lib/config";
 
 // Типы ожидаемых данных с бэкенда
 interface Space {
@@ -65,8 +66,8 @@ export default function DashboardPage() {
 
         // Параллельный запрос данных
         Promise.all([
-            fetchWithAuth("http://localhost:3000/space/my").then(res => res.json()),
-            fetchWithAuth("http://localhost:3000/document/recent").then(res => res.json())
+            fetchWithAuth(`${API_URL}/space/my`).then(res => res.json()),
+            fetchWithAuth(`${API_URL}/document/recent`).then(res => res.json())
         ])
             .then(([spacesData, activityData]) => {
                 setSpaces(Array.isArray(spacesData) ? spacesData :[]);

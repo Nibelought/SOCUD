@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, FileText, Plus, Shield, Loader2, Edit, Settings } from "lucide-react";
 import AccessManagerModal from "@/components/modals/AccessManagerModal";
+import { API_URL } from "@/lib/config";
 
 interface Document {
     id: string;
@@ -14,7 +15,7 @@ interface Document {
 
 interface Space {
     id: string;
-    title: string;
+    name: string;
     documents: Document[];
 }
 
@@ -38,12 +39,12 @@ export default function SpaceDetailsPage() {
         try {
             const payload = JSON.parse(atob(token.split('.')[1]));
             setCurrentUserId(payload.sub);
-        } catch (e) {
+        } catch {
             console.error("Invalid token");
             return router.push("/login");
         }
 
-        fetch(`http://localhost:3000/space/${spaceId}`, {
+        fetch(`${API_URL}/space/${spaceId}`, {
             headers: { "Authorization": `Bearer ${token}` }
         })
             .then(async (res) => {

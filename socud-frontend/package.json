@@ -6,7 +6,11 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.9"
   },
   "dependencies": {
     "@aarkue/tiptap-math-extension": "^1.4.0",

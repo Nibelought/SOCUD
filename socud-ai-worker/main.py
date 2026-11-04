@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     max_batch_size: int = 32
     max_text_length: int = 15000
     inference_batch_size: int = 16
+    host: str = "0.0.0.0"
+    port: int = 8000
 
     class Config:
         env_file = ".env"
@@ -106,4 +108,4 @@ async def get_embeddings(req: EmbedRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=settings.host, port=settings.port)

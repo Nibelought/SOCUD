@@ -1,13 +1,32 @@
-import { Injectable, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateDocumentDto, ManageDocumentMemberDto, UpdateDocumentDto, PublishDocumentDto  } from './dto/document.dto';
+import {
+  CreateDocumentDto,
+  ManageDocumentMemberDto,
+  UpdateDocumentDto,
+  PublishDocumentDto,
+} from './dto/document.dto';
 import { Prisma, Role } from '@prisma/client';
 import { compile } from 'html-to-text';
 
 @Injectable()
 export class DocumentService {
   private readonly logger = new Logger(DocumentService.name);
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
+
+  private get embedUrl(): string {
+    const base = this.config.getOrThrow<string>('AI_WORKER_URL');
+    return `${base.replace(/\/+$/, '')}/embed`;
+  }
 
   private async checkSpaceAccess(
     spaceId: string,
@@ -162,7 +181,7 @@ export class DocumentService {
   }
 
   // 2. Восстановление из архива (Для будущей Фазы 5)
-  async restore(documentId: string, userId: string) {
+  async restore(documentId: string, _userId: string) {
     // Запрос к БД напрямую, т.к. verifyDocumentAccess по умолчанию фильтрует isArchived: false
     const doc = await this.prisma.document.findUnique({
       where: { id: documentId },
@@ -239,7 +258,7 @@ export class DocumentService {
         where: { userId_documentId: { userId: targetUserId, documentId } },
       });
       return { success: true };
-    } catch (e) {
+    } catch {
       return { success: true }; // P2025: Record to delete does not exist
     }
   }
@@ -326,7 +345,7 @@ export class DocumentService {
 
         if (chunks.length > 0) {
           // Отправляем в Python Worker
-          const aiRes = await fetch('http://127.0.0.1:8000/embed', {
+          const aiRes = await fetch(this.embedUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ texts: chunks, is_query: false }),
@@ -410,14 +429,14 @@ export class DocumentService {
     // 2. Векторизуем запрос пользователя
     let queryVectorStr: string | null = null;
     try {
-      const aiRes = await fetch('http://127.0.0.1:8000/embed', {
+      const aiRes = await fetch(this.embedUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ texts: [query], is_query: true }), // is_query = true для E5
       });
       const aiData = await aiRes.json();
       queryVectorStr = `[${aiData.embeddings[0].join(',')}]`;
-    } catch (e) {
+    } catch {
       this.logger.warn(
         `AI Worker unavailable. Falling back to text search only.`,
       );
