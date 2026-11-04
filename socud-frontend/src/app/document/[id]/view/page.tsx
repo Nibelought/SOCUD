@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { fetchWithAuth } from "@/lib/auth";
 import { ArrowLeft, Edit3, Loader2 } from "lucide-react";
 import Link from "next/link";
 import katex from 'katex';
 import { API_URL } from "@/lib/config";
+import { KATEX_OPTIONS, sanitizeDocumentHtml } from "@/lib/security";
 
 interface DocumentData {
     id: string;
@@ -26,6 +27,13 @@ export default function DocumentViewPage() {
     const [error, setError] = useState("");
 
     const articleRef = useRef<HTMLDivElement>(null);
+
+    // Stored HTML may predate server-side sanitization, so always sanitize here.
+    const rawHtml = doc?.contentHtml ?? '';
+    const safeHtml = useMemo(
+        () => (rawHtml.trim() !== '' ? sanitizeDocumentHtml(rawHtml) : ''),
+        [rawHtml],
+    );
 
     useEffect(() => {
         const loadDocument = async () => {
@@ -73,12 +81,7 @@ export default function DocumentViewPage() {
                     element.getAttribute('display') === 'true';
 
                 try {
-                    katex.render(latex, element, {
-                        displayMode: isDisplay,
-                        throwOnError: false,
-                        trust: true,
-                        strict: false,
-                    });
+                    katex.render(latex, element, { ...KATEX_OPTIONS, displayMode: isDisplay });
                 } catch (err) {
                     console.warn('[KaTeX Node] Render error:', err);
                 }
@@ -114,12 +117,7 @@ export default function DocumentViewPage() {
 
                     const span = document.createElement('span');
                     try {
-                        katex.render(cleanLatex, span, {
-                            displayMode: isDisplay,
-                            throwOnError: false,
-                            trust: true,
-                            strict: false,
-                        });
+                        katex.render(cleanLatex, span, { ...KATEX_OPTIONS, displayMode: isDisplay });
                     } catch {
                         span.textContent = match;
                     }
@@ -181,8 +179,8 @@ export default function DocumentViewPage() {
                     ref={articleRef}
                     className="prose prose-slate prose-lg max-w-none focus:outline-none break-words"
                     dangerouslySetInnerHTML={{
-                        __html: doc.contentHtml && doc.contentHtml.trim() !== ''
-                            ? doc.contentHtml
+                        __html: safeHtml !== ''
+                            ? safeHtml
                             : '<p class="text-slate-400 italic">Документ пустий або його не опубліковано. Натисніть, будь ласка, Publish в редакторі.</p>'
                     }}
                 />

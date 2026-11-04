@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import katex from 'katex';
 import { X, Check, Eye, Type, Maximize2 } from 'lucide-react';
+import { KATEX_OPTIONS } from '@/lib/security';
 
 interface LatexEditorModalProps {
     isOpen: boolean;
@@ -37,10 +38,9 @@ export default function LatexEditorModal({ isOpen, onClose, editor, initialLatex
         }
         try {
             const html = katex.renderToString(latex, {
+                ...KATEX_OPTIONS,
                 displayMode: displayMode,
-                throwOnError: true,
-                trust: true,
-                strict: false,
+                throwOnError: true, // the modal surfaces syntax errors instead of rendering them inline
             });
             setPreviewHtml(html);
             setError(null);
