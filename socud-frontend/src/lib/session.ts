@@ -22,7 +22,6 @@ export const AUTH_PAGES = ['/login', '/register'] as const;
 export const DEFAULT_AFTER_LOGIN = '/dashboard';
 
 const MAX_NEXT_LENGTH = 2048;
-// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 const matchesPrefix = (pathname: string, prefix: string) =>
@@ -32,7 +31,7 @@ export const isProtectedPath = (pathname: string): boolean =>
   PROTECTED_PREFIXES.some((p) => matchesPrefix(pathname, p));
 
 export const isAuthPage = (pathname: string): boolean =>
-  AUTH_PAGES.some((p) => matchesPrefix(pathname, p));
+  (AUTH_PAGES as readonly string[]).includes(pathname);
 
 /** True for a string that is a same-origin relative reference after (repeated) percent-decoding. */
 const looksSafe = (value: string): boolean =>
