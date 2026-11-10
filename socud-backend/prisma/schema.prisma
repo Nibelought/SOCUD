@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  extensions = [vector]
+  extensions = [vector, pg_trgm]
 }
 
 model User {
@@ -127,10 +127,19 @@ model Document {
   sourceLinks DocumentLink[] @relation("SourceLinks")
   targetLinks DocumentLink[] @relation("TargetLinks")
 
+  // GENERATED ALWAYS AS (setweight(to_tsvector('russian', title), 'A')) STORED, see migration
+  // 20261111090000_search_fts_trgm. Never written by the client (the @default only mirrors the
+  // generation expression so that `prisma migrate dev` sees no drift). Published body text is
+  // searched through DocumentChunk.searchVector.
+  searchVector Unsupported("tsvector")? @default(dbgenerated("setweight(to_tsvector('russian'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\")"))
+
   // IDOR
   @@index([spaceId])
   @@index([parentId])
   @@index([isArchived])
+  // Full-text search over titles and trigram similarity (typos, partial words) over titles.
+  @@index([searchVector], type: Gin, map: "Document_searchVector_idx")
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "Document_title_trgm_idx")
 }
 
 model DocumentChunk {
@@ -142,12 +151,17 @@ model DocumentChunk {
   // NULL until the embed-document job has stored the vector (Qwen3-Embedding, 1024 dims).
   embedding Unsupported("vector(1024)")?
 
+  // GENERATED ALWAYS AS (setweight(to_tsvector('russian', "textContent"), 'B')) STORED, see
+  // migration 20261111090000_search_fts_trgm. Never written by the client (see Document.searchVector).
+  searchVector Unsupported("tsvector")? @default(dbgenerated("setweight(to_tsvector('russian'::regconfig, COALESCE(\"textContent\", ''::text)), 'B'::\"char\")"))
+
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   // HNSW
   // vector_cosine_ops
   @@index([embedding], map: "DocumentChunk_embedding_hnsw_idx")
   @@index([documentId])
+  @@index([searchVector], type: Gin, map: "DocumentChunk_searchVector_idx")
 }
 
 // Immutable snapshot taken by Publish.
