@@ -158,6 +158,18 @@ describe('RoleGuard', () => {
     expect(permissions.assertSpaceRole).not.toHaveBeenCalled();
   });
 
+  it('rejects a malformed id with the same 400 as ParseUUIDPipe, before any lookup', async () => {
+    const ctx = setup(
+      Role.VIEWER,
+      { resource: 'document' },
+      { user: { id: USER }, params: { id: 'not-a-uuid' } },
+    );
+    await expect(guard.canActivate(ctx)).rejects.toThrow(
+      new BadRequestException('Validation failed (uuid is expected)'),
+    );
+    expect(permissions.assertDocumentRole).not.toHaveBeenCalled();
+  });
+
   it('refuses includeArchived for roles other than OWNER at declaration time', () => {
     expect(() =>
       RequireRole(Role.EDITOR, { resource: 'document', includeArchived: true }),

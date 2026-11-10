@@ -179,13 +179,11 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
       },
     };
     permissionService = {
-      // Mirrors PermissionService.resolveDocumentRole: 404 for a missing document.
-      resolveDocumentRole: jest.fn((userId: string, _docId: string) => {
-        const role = roles.get(userId);
-        return role
-          ? Promise.resolve(role)
-          : Promise.reject(new NotFoundException());
-      }),
+      // Mirrors PermissionService.resolveDocumentRole: null role = not a member (the service
+      // then yields 403); archived/missing documents reject with NotFoundException.
+      resolveDocumentRole: jest.fn((userId: string, _docId: string) =>
+        Promise.resolve(roles.get(userId) ?? null),
+      ),
     };
   });
 
