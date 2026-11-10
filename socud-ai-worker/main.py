@@ -1,126 +1,132 @@
-import re
-import secrets
-import torch
-import logging
+"""SOCUD AI worker: HTTP API around the Qwen3 embedding model (runs natively on Apple Silicon)."""
+
 import asyncio
-from functools import partial
-from typing import Optional
+import logging
+import secrets
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from typing import Callable, Optional, Protocol
+
+import numpy as np
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings
-from typing import List
-from sentence_transformers import SentenceTransformer
 
-# --- Конфигурация ---
-class Settings(BaseSettings):
-    model_name: str = "intfloat/multilingual-e5-base"
-    max_batch_size: int = 32
-    max_text_length: int = 15000
-    inference_batch_size: int = 16
-    # Loopback by default: the worker has no user authentication of its own.
-    host: str = "127.0.0.1"
-    port: int = 8000
-    # Shared secret for POST /embed (header X-Worker-Token). Empty/unset = no token required.
-    worker_token: Optional[str] = None
+from config import Settings
 
-    class Config:
-        env_file = ".env"
-
-settings = Settings()
-
-# --- Логирование ---
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("socud.worker")
 
-app = FastAPI(title="Knowledge Base Vectorizer API", version="2.1.0")
 
-# --- Инициализация ML-ресурсов ---
-def get_device() -> str:
-    """Определение доступного аппаратного ускорителя."""
-    if torch.cuda.is_available():
-        return "cuda"
-    elif torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
+class Embedder(Protocol):
+    """What the API needs from the model layer; tests substitute a stub."""
 
-device = get_device()
-logger.info(f"Инициализация модели '{settings.model_name}' на устройстве: {device}")
+    model_name: str
+    dim: int
+    device: str
 
-try:
-    model = SentenceTransformer(settings.model_name, device=device)
-    # Оптимизация VRAM (FP16) только для CUDA
-    if device == "cuda":
-        model.half()
-except Exception as e:
-    logger.error(f"Критическая ошибка загрузки модели: {e}")
-    raise
+    def load(self) -> None: ...
 
-# --- Схемы данных (Pydantic V2) ---
-class EmbedRequest(BaseModel):
-    texts: List[str] = Field(..., min_length=1, max_length=settings.max_batch_size)
-    is_query: bool = False
+    def embed(self, texts: list[str], is_query: bool = False) -> np.ndarray: ...
 
-    @field_validator('texts')
-    @classmethod
-    def check_length(cls, v):
-        for text in v:
-            if len(text) > settings.max_text_length:
-                raise ValueError(f"Текст превышает лимит {settings.max_text_length} символов")
-        return v
 
-# --- Препроцессинг ---
-def clean_content(text: str) -> str:
-    """Удаление синтаксического шума Markdown/LaTeX перед инференсом."""
-    text = re.sub(r'```[\s\S]*? ```', ' [code] ', text)
-    text = re.sub(r'\$\$[\s\S]*?\$\$', ' [formula] ', text)
-    text = re.sub(r'\$.*?\$', ' [formula] ', text)
-    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
-    text = re.sub(r'!\[[^\]]*\]\([^\)]+\)', '', text)
-    text = re.sub(r'[*_#>-]', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+def default_embedder_factory(settings: Settings) -> Embedder:
+    from mlx_embedder import MlxEmbedder  # imported lazily: needs Apple Silicon + mlx
 
-# --- Авторизация воркера ---
-def require_worker_token(x_worker_token: Optional[str] = Header(default=None)) -> None:
-    """Если задан WORKER_TOKEN, /embed требует совпадающий заголовок X-Worker-Token."""
-    expected = settings.worker_token
-    if not expected:
-        return
-    provided = x_worker_token or ""
-    # Сравнение в постоянном времени (байты, чтобы допускать не-ASCII значения)
-    if not secrets.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
-        raise HTTPException(status_code=401, detail="Invalid or missing worker token")
+    return MlxEmbedder(settings)
 
-# --- Роуты API ---
-@app.get("/health")
-async def health_check():
-    """Эндпоинт для оркестраторов (Docker/K8s)."""
-    return {"status": "ok", "device": device, "model": settings.model_name}
 
-@app.post("/embed", dependencies=[Depends(require_worker_token)])
-async def get_embeddings(req: EmbedRequest):
-    try:
-        prefix = "query: " if req.is_query else "passage: "
-        processed = [prefix + clean_content(t) for t in req.texts]
+def make_embed_request(settings: Settings) -> type[BaseModel]:
+    class EmbedRequest(BaseModel):
+        texts: list[str] = Field(..., min_length=1, max_length=settings.max_batch_size)
+        is_query: bool = False
 
-        # Делегирование тяжелой задачи в пул потоков во избежание блокировки Event Loop
+        @field_validator("texts")
+        @classmethod
+        def check_length(cls, v: list[str]) -> list[str]:
+            for text in v:
+                if len(text) > settings.max_text_length:
+                    raise ValueError(f"Text exceeds the limit of {settings.max_text_length} characters")
+            return v
+
+    return EmbedRequest
+
+
+def create_app(
+    settings: Optional[Settings] = None,
+    embedder_factory: Callable[[Settings], Embedder] = default_embedder_factory,
+) -> FastAPI:
+    settings = settings or Settings()
+    embedder = embedder_factory(settings)
+    EmbedRequest = make_embed_request(settings)
+    # One dedicated thread runs every MLX call (loading and inference): MLX streams are per-thread, and a single
+    # worker also serialises access to the model (the embedder additionally holds a lock).
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
+    state = {"status": "loading", "error": None}
+
+    async def load_model() -> None:
         loop = asyncio.get_running_loop()
-        func = partial(
-            model.encode,
-            processed,
-            normalize_embeddings=True,
-            batch_size=settings.inference_batch_size,
-            convert_to_numpy=True
-        )
+        try:
+            await loop.run_in_executor(executor, embedder.load)
+            state["status"] = "ok"
+        except Exception as e:  # keep serving /health so the failure is visible
+            state["status"] = "error"
+            state["error"] = f"{type(e).__name__}: {e}"
+            logger.exception("Model failed to load")
 
-        embeddings_array = await loop.run_in_executor(None, func)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Load in the background so the port opens immediately and /health reports "loading" (503).
+        task = asyncio.create_task(load_model())
+        try:
+            yield
+        finally:
+            task.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
 
-        return {"embeddings": embeddings_array.tolist(), "device": device}
+    app = FastAPI(title="SOCUD embedding worker", version="3.0.0", lifespan=lifespan)
 
-    except Exception as e:
-        logger.error(f"Ошибка инференса: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+    def require_worker_token(x_worker_token: Optional[str] = Header(default=None)) -> None:
+        """If WORKER_TOKEN is set, /embed requires a matching X-Worker-Token header."""
+        expected = settings.worker_token
+        if not expected:
+            return
+        provided = x_worker_token or ""
+        # Constant-time comparison on bytes (allows non-ASCII values)
+        if not secrets.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
+            raise HTTPException(status_code=401, detail="Invalid or missing worker token")
+
+    @app.get("/health")
+    async def health():
+        body = {
+            "status": state["status"],
+            "model": embedder.model_name,
+            "dim": embedder.dim,
+            "device": embedder.device,
+        }
+        if state["status"] == "error":
+            body["error"] = state["error"]
+        return JSONResponse(body, status_code=200 if state["status"] == "ok" else 503)
+
+    @app.post("/embed", dependencies=[Depends(require_worker_token)])
+    async def embed(req: EmbedRequest):  # type: ignore[valid-type]
+        if state["status"] != "ok":
+            raise HTTPException(status_code=503, detail=f"Model is not ready ({state['status']})")
+        try:
+            loop = asyncio.get_running_loop()
+            vectors = await loop.run_in_executor(executor, embedder.embed, req.texts, req.is_query)
+        except Exception as e:
+            logger.exception("Inference failed")
+            raise HTTPException(status_code=500, detail="Internal Server Error") from e
+        return {"embeddings": vectors.tolist(), "model": embedder.model_name, "dim": embedder.dim}
+
+    return app
+
+
+app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=settings.host, port=settings.port)
+
+    _settings = Settings()
+    uvicorn.run(app, host=_settings.host, port=_settings.port)
