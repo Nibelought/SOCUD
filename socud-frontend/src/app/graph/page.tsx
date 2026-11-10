@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { fetchWithAuth } from '@/lib/auth';
-import { API_URL } from "@/lib/config";
+import { api, type components } from '@/lib/api/client';
 
 // КРИТИЧЕСКИ ВАЖНО: Отключаем SSR
 const DynamicGraph = dynamic(
@@ -16,17 +15,17 @@ const DynamicGraph = dynamic(
 
 export default function KnowledgeGraphPage() {
     const router = useRouter();
-    const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+    const [graphData, setGraphData] = useState<components["schemas"]["KnowledgeGraphDto"]>({ nodes: [], links: [] });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const token = localStorage.getItem("socud_token");
         if (!token) return router.push("/login");
 
-        fetchWithAuth(`${API_URL}/document/graph`)
-            .then(res => res.json())
-            .then(data => {
-                setGraphData(data);
+        api.GET('/document/graph')
+            .then(({ data }) => {
+                // Previously the raw body was stored (an error body would crash the page); keep the page alive
+                if (data) setGraphData(data);
                 setLoading(false);
             })
             .catch(err => {

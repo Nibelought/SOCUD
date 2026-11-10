@@ -2,20 +2,13 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { fetchWithAuth } from "@/lib/auth";
+import { api, type components } from "@/lib/api/client";
 import { ArrowLeft, Edit3, Loader2 } from "lucide-react";
 import Link from "next/link";
 import katex from 'katex';
-import { API_URL } from "@/lib/config";
 import { KATEX_OPTIONS, sanitizeDocumentHtml } from "@/lib/security";
 
-interface DocumentData {
-    id: string;
-    title: string;
-    contentHtml: string | null;
-    updatedAt: string;
-    space: { name: string };
-}
+type DocumentData = components["schemas"]["DocumentViewDto"];
 
 export default function DocumentViewPage() {
     const params = useParams();
@@ -38,9 +31,10 @@ export default function DocumentViewPage() {
     useEffect(() => {
         const loadDocument = async () => {
             try {
-                const res = await fetchWithAuth(`${API_URL}/document/${docId}`);
-                if (!res.ok) throw new Error(res.status === 404 ? "Документ не найден" : "Нет доступа");
-                const data = await res.json();
+                const { data, response } = await api.GET("/document/{id}", {
+                    params: { path: { id: docId } },
+                });
+                if (!response.ok || !data) throw new Error(response.status === 404 ? "Документ не найден" : "Нет доступа");
                 setDoc(data);
             } catch (err: any) {
                 setError(err.message);

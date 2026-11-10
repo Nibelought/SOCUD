@@ -5,19 +5,9 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, FileText, Plus, Shield, Loader2, Edit, Settings } from "lucide-react";
 import AccessManagerModal from "@/components/modals/AccessManagerModal";
-import { API_URL } from "@/lib/config";
+import { api, type components } from "@/lib/api/client";
 
-interface Document {
-    id: string;
-    title: string;
-    updatedAt: string;
-}
-
-interface Space {
-    id: string;
-    name: string;
-    documents: Document[];
-}
+type Space = components["schemas"]["SpaceDetailDto"];
 
 export default function SpaceDetailsPage() {
     const router = useRouter();
@@ -44,14 +34,9 @@ export default function SpaceDetailsPage() {
             return router.push("/login");
         }
 
-        fetch(`${API_URL}/space/${spaceId}`, {
-            headers: { "Authorization": `Bearer ${token}` }
-        })
-            .then(async (res) => {
-                if (!res.ok) throw new Error("Failed to load space or access denied");
-                return res.json();
-            })
-            .then((data) => {
+        api.GET("/space/{id}", { params: { path: { id: spaceId } } })
+            .then(({ data, response }) => {
+                if (!response.ok || !data) throw new Error("Failed to load space or access denied");
                 setSpace(data);
                 setLoading(false);
             })

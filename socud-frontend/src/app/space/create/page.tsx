@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Shield, ArrowLeft } from "lucide-react";
-import { API_URL } from "@/lib/config";
+import { api, apiErrorMessage } from "@/lib/api/client";
 
 export default function CreateSpacePage() {
     const router = useRouter();
@@ -22,20 +22,14 @@ export default function CreateSpacePage() {
         if (!token) return router.push("/login");
 
         try {
-            const res = await fetch(`${API_URL}/space`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-                body: JSON.stringify({ name, description }), // FIX: Передаем description (без userId!)
+            // Bearer + refresh-on-401 are handled by the client
+            const { response, error } = await api.POST("/space", {
+                body: { name, description }, // FIX: Передаем description (без userId!)
             });
 
-            if (!res.ok) {
-                const data = await res.json();
-                // Улучшенная обработка массива ошибок от NestJS
-                const errMsg = Array.isArray(data.message) ? data.message.join(', ') : data.message;
-                throw new Error(errMsg || "Failed to create space");
+            if (!response.ok) {
+                // apiErrorMessage joins NestJS validation message arrays
+                throw new Error(apiErrorMessage(error, "Failed to create space"));
             }
 
             router.push("/dashboard");

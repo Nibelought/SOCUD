@@ -9,24 +9,12 @@ import {
 } from "lucide-react";
 import { Share2 } from "lucide-react";
 import SearchModal from "@/components/search/SearchModal";
-import { fetchWithAuth, logout } from '@/lib/auth';
-import { API_URL } from "@/lib/config";
+import { logout } from '@/lib/auth';
+import { api, type components } from '@/lib/api/client';
 
-// Типы ожидаемых данных с бэкенда
-interface Space {
-    id: string;
-    name: string;
-    _count?: { documents: number };
-}
-
-interface Activity {
-    id: string;
-    title: string;
-    updatedAt: string;
-    space: { name: string };
-    updatedBy: string;
-    createdBy: string;
-}
+// Типы данных с бэкенда (генерируются из openapi.json)
+type Space = components["schemas"]["SpaceWithCountDto"];
+type Activity = components["schemas"]["RecentDocumentDto"];
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -66,12 +54,13 @@ export default function DashboardPage() {
 
         // Параллельный запрос данных
         Promise.all([
-            fetchWithAuth(`${API_URL}/space/my`).then(res => res.json()),
-            fetchWithAuth(`${API_URL}/document/recent`).then(res => res.json())
+            api.GET('/space/my'),
+            api.GET('/document/recent')
         ])
-            .then(([spacesData, activityData]) => {
-                setSpaces(Array.isArray(spacesData) ? spacesData :[]);
-                setActivities(Array.isArray(activityData) ? activityData :[]);
+            .then(([spacesRes, activityRes]) => {
+                // Error bodies are objects, not arrays: keep the empty-list fallback
+                setSpaces(Array.isArray(spacesRes.data) ? spacesRes.data :[]);
+                setActivities(Array.isArray(activityRes.data) ? activityRes.data :[]);
             })
             .catch(console.error)
             .finally(() => setLoading(false));
