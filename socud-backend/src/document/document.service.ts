@@ -14,7 +14,7 @@ import {
   UpdateDocumentDto,
   PublishDocumentDto,
 } from './dto/document.dto';
-import { Prisma, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import { sanitizeDocumentHtml } from '../common/html-sanitizer';
 import { chunkHtml } from '../pipeline/chunker';
 import { htmlToPlainText } from '../pipeline/html-text';
@@ -39,23 +39,6 @@ export class DocumentService {
     // Source of the live Yjs state, filled by Hocuspocus (see LiveDocumentRegistry).
     @Optional() private liveDocuments?: LiveDocumentRegistry,
   ) {}
-
-  private get embedUrl(): string {
-    const base = this.config.getOrThrow<string>('AI_WORKER_URL');
-    return `${base.replace(/\/+$/, '')}/embed`;
-  }
-
-  /** Request timeout for the AI worker so a hung worker cannot block requests forever. */
-  private static readonly EMBED_TIMEOUT_MS = 15000;
-
-  private get embedHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    const token = this.config.get<string>('AI_WORKER_TOKEN');
-    if (token) headers['X-Worker-Token'] = token;
-    return headers;
-  }
 
   async create(dto: CreateDocumentDto, userId: string) {
     await this.permissions.assertSpaceRole(userId, dto.spaceId, Role.EDITOR);
@@ -377,110 +360,6 @@ export class DocumentService {
     });
     if (!found) throw new NotFoundException('Version not found');
     return found;
-  }
-
-  public async hybridSearch(userId: string, query: string) {
-    // 1. Получаем ID всех доступных документов (IDOR фильтр)
-    const whereClause = await this.permissions.accessibleDocumentsWhere(userId);
-
-    const accessibleDocs = await this.prisma.document.findMany({
-      where: whereClause,
-      select: { id: true, title: true, space: { select: { name: true } } },
-    });
-
-    if (accessibleDocs.length === 0) return [];
-
-    const docMap = new Map(accessibleDocs.map((d) => [d.id, d]));
-    const accessibleDocIds = Array.from(docMap.keys());
-
-    // 2. Векторизуем запрос пользователя
-    let queryVectorStr: string | null = null;
-    try {
-      const aiRes = await fetch(this.embedUrl, {
-        method: 'POST',
-        headers: this.embedHeaders,
-        body: JSON.stringify({ texts: [query], is_query: true }), // is_query = true для E5
-        signal: AbortSignal.timeout(DocumentService.EMBED_TIMEOUT_MS),
-      });
-      const aiData = await aiRes.json();
-      queryVectorStr = `[${aiData.embeddings[0].join(',')}]`;
-    } catch {
-      this.logger.warn(
-        `AI Worker unavailable. Falling back to text search only.`,
-      );
-    }
-
-    const results: any[] = [];
-    const usedDocIds = new Set<string>();
-
-    // 3. СЕМАНТИЧЕСКИЙ ПОИСК (Топ 3)
-    if (queryVectorStr) {
-      const semanticHits: any[] = await this.prisma.$queryRaw`
-        SELECT "documentId", "textContent", (1 - (embedding <=> ${queryVectorStr}::vector)) as score
-        FROM "DocumentChunk"
-        WHERE "documentId" IN (${Prisma.join(accessibleDocIds)})
-          AND embedding IS NOT NULL
-        ORDER BY embedding <=> ${queryVectorStr}::vector ASC
-          LIMIT 3
-      `;
-
-      for (const hit of semanticHits) {
-        if (!usedDocIds.has(hit.documentId)) {
-          usedDocIds.add(hit.documentId);
-          const doc = docMap.get(hit.documentId);
-
-          if (!doc) continue; // FIX: Защита от undefined
-
-          results.push({
-            id: doc.id,
-            title: doc.title,
-            space: (doc as any).space?.name, // FIX: Обход типизации TS
-            snippet:
-              hit.textContent.length > 100
-                ? hit.textContent.substring(0, 100) + '...'
-                : hit.textContent,
-            type: 'semantic',
-            score: Math.round(hit.score * 100) / 100,
-          });
-        }
-      }
-    }
-
-    // 4. КЛАССИЧЕСКИЙ ПОИСК (Дополнение до 5 результатов)
-    const limit = 5 - results.length;
-
-    if (limit > 0 && accessibleDocIds.length > 0) {
-      const textHits: any[] = await this.prisma.$queryRaw`
-        SELECT "documentId", "textContent"
-        FROM "DocumentChunk"
-        WHERE "documentId" IN (${Prisma.join(accessibleDocIds)})
-          AND "textContent" ILIKE ${'%' + query + '%'}
-          LIMIT ${limit * 5}
-      `;
-
-      for (const hit of textHits) {
-        if (!usedDocIds.has(hit.documentId) && results.length < 5) {
-          usedDocIds.add(hit.documentId);
-          const doc = docMap.get(hit.documentId);
-
-          if (!doc) continue; // FIX: Защита от undefined
-
-          results.push({
-            id: doc.id,
-            title: doc.title,
-            space: (doc as any).space?.title, // FIX: Обход строгой типизации TS
-            snippet:
-              hit.textContent.length > 100
-                ? hit.textContent.substring(0, 100) + '...'
-                : hit.textContent,
-            type: 'keyword',
-            score: null, // Классический поиск не имеет normalized score
-          });
-        }
-      }
-    }
-
-    return results;
   }
 
   public async getKnowledgeGraph(userId: string) {

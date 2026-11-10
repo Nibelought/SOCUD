@@ -163,19 +163,39 @@ export class SearchResultDto {
   @ApiProperty()
   title: string;
 
-  /** Space name; may be absent for keyword hits. */
-  @ApiProperty({ required: false })
-  space?: string;
+  /** Space name. */
+  @ApiProperty()
+  space: string;
 
+  /** PLAIN TEXT (never HTML): render it as text. */
   @ApiProperty()
   snippet: string;
 
   @ApiProperty({ enum: ['semantic', 'keyword'] })
   type: 'semantic' | 'keyword';
 
-  /** Similarity in 0..1 for semantic hits, null for keyword hits. */
+  /** Cosine similarity in 0..1 of the best chunk for semantic matches, otherwise null. */
   @ApiProperty({ type: Number, nullable: true })
   score: number | null;
+
+  /** Retrievers that found the document. */
+  @ApiProperty({ enum: ['semantic', 'keyword', 'title'], isArray: true })
+  matchedBy: Array<'semantic' | 'keyword' | 'title'>;
+
+  /** Reciprocal-rank-fusion value the results are ordered by (not a percentage). */
+  @ApiProperty()
+  rrfScore: number;
+
+  /** Matched ranges inside `snippet` (keyword matches only). */
+  @ApiProperty({
+    required: false,
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: { start: { type: 'integer' }, end: { type: 'integer' } },
+    },
+  })
+  highlights?: Array<{ start: number; end: number }>;
 }
 
 export class DocumentMemberDto {

@@ -164,6 +164,22 @@ describe('validateEnv observability settings', () => {
   });
 });
 
+describe('validateEnv SEARCH_MIN_SIMILARITY', () => {
+  it('defaults to 0.2 and accepts values in -1..1', () => {
+    expect(validateEnv(base).SEARCH_MIN_SIMILARITY).toBe(0.2);
+    expect(
+      validateEnv({ ...base, SEARCH_MIN_SIMILARITY: '0.35' })
+        .SEARCH_MIN_SIMILARITY,
+    ).toBe(0.35);
+  });
+
+  it('rejects values outside -1..1', () => {
+    expect(() =>
+      validateEnv({ ...base, SEARCH_MIN_SIMILARITY: '1.5' }),
+    ).toThrow();
+  });
+});
+
 describe('validateEnv Swagger / session cookie settings', () => {
   it('leaves SWAGGER_ENABLED and SESSION_COOKIE_DOMAIN unset by default', () => {
     const env = validateEnv(base);
