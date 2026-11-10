@@ -23,6 +23,9 @@ export const MAX_QUERY_LENGTH = 256;
 /** Titles shorter than this are not matched by the trigram retriever (no usable trigrams). */
 export const MIN_TITLE_QUERY_LENGTH = 2;
 
+/** Default of SEARCH_MIN_SIMILARITY (cosine similarity floor for semantic hits). */
+export const DEFAULT_MIN_SIMILARITY = 0.2;
+
 /** Budget for the query embedding; on timeout the search degrades to keyword + title. */
 export const QUERY_EMBED_TIMEOUT_MS = 3000;
 

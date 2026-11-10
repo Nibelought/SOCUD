@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../permission/permission.service';
 import { EmbeddingClient } from '../queue/embedding.client';
 import {
+  DEFAULT_MIN_SIMILARITY,
   FTS_CONFIG,
   HEADLINE_START,
   HEADLINE_STOP,
@@ -54,7 +56,16 @@ export class SearchService {
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionService,
     private readonly embeddings: EmbeddingClient,
+    private readonly config: ConfigService,
   ) {}
+
+  /** Cosine similarity below which a semantic hit is considered noise. */
+  private get minSimilarity(): number {
+    return Number(
+      this.config.get<number>('SEARCH_MIN_SIMILARITY') ??
+        DEFAULT_MIN_SIMILARITY,
+    );
+  }
 
   async search(userId: string, rawQuery: string): Promise<SearchResult[]> {
     const query = (rawQuery ?? '').trim().slice(0, MAX_QUERY_LENGTH);
@@ -182,11 +193,14 @@ export class SearchService {
         LIMIT ${RETRIEVER_LIMIT}
       `;
     });
-    return rows.map((r) => ({
-      id: r.id,
-      similarity: Number(r.similarity),
-      text: r.text,
-    }));
+    const floor = this.minSimilarity;
+    return rows
+      .map((r) => ({
+        id: r.id,
+        similarity: Number(r.similarity),
+        text: r.text,
+      }))
+      .filter((h) => h.similarity >= floor); // also drops NaN (zero vectors)
   }
 
   /** websearch_to_tsquery over published chunks and document titles (title match weighs A). */

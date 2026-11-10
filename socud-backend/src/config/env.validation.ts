@@ -83,6 +83,17 @@ export class EnvironmentVariables {
   @Min(1000)
   EMBED_TIMEOUT_MS: number = 60000;
 
+  /**
+   * Search: semantic hits with a cosine similarity below this are dropped (the nearest chunks are
+   * otherwise returned even when nothing is relevant). Calibrate against the real embedding model.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-1)
+  @Max(1)
+  SEARCH_MIN_SIMILARITY: number = 0.2;
+
   /** Master switch of the queue (producer + consumer). Default: on, except NODE_ENV=test. */
   @IsOptional()
   @Transform(toBoolean)

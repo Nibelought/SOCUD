@@ -4,7 +4,11 @@ import { Prisma } from '@prisma/client';
 import { PermissionService } from '../permission/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmbeddingClient } from '../queue/embedding.client';
-import { createPrismaServiceMock } from '../test-utils/mocks';
+import { ConfigService } from '@nestjs/config';
+import {
+  createConfigServiceMock,
+  createPrismaServiceMock,
+} from '../test-utils/mocks';
 import {
   HEADLINE_START as S,
   HEADLINE_STOP as E,
@@ -78,6 +82,10 @@ describe('SearchService', () => {
         PermissionService,
         { provide: PrismaService, useValue: createPrismaServiceMock() },
         { provide: EmbeddingClient, useValue: embeddings },
+        {
+          provide: ConfigService,
+          useValue: createConfigServiceMock({ SEARCH_MIN_SIMILARITY: 0.2 }),
+        },
       ],
     }).compile();
     service = moduleRef.get(SearchService);
@@ -162,6 +170,17 @@ describe('SearchService', () => {
       snippet: 'lead of c',
     });
     expect(b.rrfScore).toBeGreaterThan(a.rrfScore);
+  });
+
+  it('drops semantic hits below the similarity floor (and non-finite ones)', async () => {
+    hits.semantic = [
+      { id: 'a', similarity: 0.6, text: 'relevant' },
+      { id: 'b', similarity: 0.19, text: 'noise' },
+      { id: 'c', similarity: NaN, text: 'zero vector' },
+    ];
+    docs = [doc('a'), doc('b'), doc('c')];
+    const results = await service.search(USER, 'q1');
+    expect(results.map((r) => r.id)).toEqual(['a']);
   });
 
   it('marks a keyword hit on the title as matched by title as well', async () => {
