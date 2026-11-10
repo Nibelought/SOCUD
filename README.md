@@ -80,6 +80,25 @@ It is idempotent: an existing admin is left untouched; an existing non-admin use
 
 The backend logs JSON through pino (`nestjs-pino`): one line per request with a request id (`X-Request-Id` is reused when well-formed, otherwise generated, and echoed in the response), `Authorization`, cookies, `X-Worker-Token`, and password/token fields are redacted. Set `LOG_LEVEL` (default `info` in production, `debug` in development). Output is pretty-printed only with `NODE_ENV=development`. Sentry (`@sentry/nestjs`) is enabled only when `SENTRY_DSN` is set and sends no cookies, headers, bodies, or user data. Frontend Sentry is not set up yet.
 
+### API documentation (OpenAPI)
+
+The backend documents its REST API with `@nestjs/swagger`. Swagger UI is served at `/api/docs` and the JSON at `/api/docs-json` when `NODE_ENV` is not `production`; set `SWAGGER_ENABLED=true|false` to override either way (the relaxed Content-Security-Policy that Swagger UI needs applies to those two routes only). The Hocuspocus WebSocket is not part of the document.
+
+The committed `socud-backend/openapi.json` is the contract, and the frontend's typed client (`openapi-typescript` types + `openapi-fetch`) is generated from it. After changing any controller or DTO, regenerate both, in this order, and commit the results (CI fails when they are stale):
+
+```bash
+cd socud-backend && npm run openapi:export   # builds in Nest preview mode: needs no database or Redis
+cd ../socud-frontend && npm run api:gen      # writes src/lib/api/schema.d.ts
+```
+
+Response types are classes in `*-response.dto.ts` files; the Nest CLI plugin (configured in `nest-cli.json`) derives request-DTO schemas from `class-validator` decorators and TypeScript types, which is why the export goes through `nest build`.
+
+### Sessions and route protection
+
+Besides the httpOnly `socud_refresh` cookie (scoped to path `/auth`, so the web app's server never sees it), login and refresh set a readable `socud_session=1` hint cookie (path `/`, SameSite=Lax, same lifetime; cleared on logout and on a rejected refresh). The Next.js proxy (`socud-frontend/src/proxy.ts`; Next 16's name for `middleware`) uses it to redirect signed-out visitors of `/dashboard`, `/space`, `/document` and `/graph` to `/login?next=<path>` and signed-in users away from `/login` and `/register`. `next` is accepted only as a same-origin relative path. This is a UX convenience, not a security boundary: the hint is forgeable and every API call is authenticated by the backend.
+
+Cookies are not scoped by port, so `localhost:3001` (web) and `localhost:3000` (API) share them. If web and API live on different subdomains in production, set `SESSION_COOKIE_DOMAIN` (for example `.example.com`) in the backend; on unrelated domains the hint can never reach the web app, so set `SESSION_REDIRECTS=off` for the frontend to disable the redirects. Sessions created before this feature have no hint cookie and need one fresh login.
+
 Before step 1, set `POSTGRES_PASSWORD` in the root `.env` (for example `openssl rand -hex 24`). Before step 3, edit `socud-backend/.env`: set `JWT_SECRET` to a random string of at least 32 characters (`openssl rand -hex 32`) and make `DATABASE_URL` match the root `.env` (`postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>`). The `DATABASE_URL` in `socud-backend/.env.example` still contains the old default password `check-socud`, so it must be changed. The backend refuses to start if a required variable is missing or invalid.
 
 An existing database volume keeps the password it was created with: `POSTGRES_PASSWORD` is applied only when the volume is first initialised. If you already have data from an earlier version, set `POSTGRES_PASSWORD=check-socud` (the old default) in the root `.env`, or change the password inside the database with `ALTER USER` and use the new one in both files.
@@ -118,6 +137,8 @@ Each service ships an example file: `.env.example` (root, for Docker Compose), `
 | `CORS_ORIGIN` | no | `http://localhost:3001` | Allowed origin(s); comma-separated list allowed |
 | `NODE_ENV` | no | `development` | `development`, `production`, or `test` |
 | `LOG_LEVEL` | no | `info` (production), `debug` (development) | pino level: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
+| `SWAGGER_ENABLED` | no | on unless `NODE_ENV=production` | Serve Swagger UI at `/api/docs` and JSON at `/api/docs-json` |
+| `SESSION_COOKIE_DOMAIN` | no | none (host-only) | `Domain` of the `socud_session` hint cookie; only for web and API on different subdomains |
 | `SENTRY_DSN` | no | none | Enables Sentry error reporting when set |
 | `SENTRY_TRACES_SAMPLE_RATE` | no | `0` | Fraction (0..1) of requests traced |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | seed only | none | Read by `npm run db:seed` only |
@@ -130,6 +151,8 @@ Both variables are inlined at build time, so rebuild after changing them.
 | --- | --- | --- | --- |
 | `NEXT_PUBLIC_API_URL` | no | `http://localhost:3000` | Backend REST URL |
 | `NEXT_PUBLIC_WS_URL` | no | `ws://127.0.0.1:3002` | Backend WebSocket URL |
+
+Runtime-only (read by the proxy, not inlined): `SESSION_REDIRECTS=off` disables the session redirects (see "Sessions and route protection").
 
 ### AI worker (`socud-ai-worker/.env`, optional)
 
@@ -152,7 +175,9 @@ Both variables are inlined at build time, so rebuild after changing them.
 | `socud-backend` | `npm test` | Unit tests (no database needed) |
 | `socud-backend` | `npm run test:e2e` | End-to-end tests (requires running PostgreSQL) |
 | `socud-backend` | `npm run build` | Production build |
+| `socud-backend` | `npm run openapi:export` | Rebuild and write `openapi.json` (no database or Redis needed) |
 | `socud-backend` | `npm run db:seed` | Create the first admin (see "First admin") |
+| `socud-frontend` | `npm run api:gen` | Regenerate `src/lib/api/schema.d.ts` from `../socud-backend/openapi.json` |
 | `socud-frontend` | `npm run lint` | ESLint |
 | `socud-frontend` | `npm run typecheck` | TypeScript check |
 | `socud-frontend` | `npm test` | Unit tests (Vitest) |
