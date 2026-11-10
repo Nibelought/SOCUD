@@ -1,7 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,10 +10,14 @@ import {
   UpdateSpaceDto,
 } from './dto/space.dto';
 import { Prisma, Role } from '@prisma/client';
+import { PermissionService } from '../permission/permission.service';
 
 @Injectable()
 export class SpaceService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private permissions: PermissionService,
+  ) {}
 
   async create(dto: CreateSpaceDto, userId: string) {
     // Транзакция гарантирует: если упадет создание члена, пространство не создастся (и наоборот)
@@ -52,9 +55,7 @@ export class SpaceService {
   }
 
   async findMySpaces(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    if (user?.isSystemAdmin) {
+    if (await this.permissions.isSystemAdmin(userId)) {
       return this.prisma.space.findMany({
         where: { isArchived: false },
         include: { _count: { select: { documents: true } } },
@@ -72,16 +73,12 @@ export class SpaceService {
 
   async findOne(spaceId: string, userId: string) {
     // 1. Проверка прав (глобальный админ или участник пространства)
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    if (!user?.isSystemAdmin) {
-      const membership = await this.prisma.spaceMember.findUnique({
-        where: { userId_spaceId: { userId, spaceId } },
-      });
-      if (!membership) {
-        throw new ForbiddenException('You do not have access to this space');
-      }
-    }
+    await this.permissions.assertSpaceRole(
+      userId,
+      spaceId,
+      Role.VIEWER,
+      'You do not have access to this space',
+    );
 
     // 2. Извлечение пространства вместе с его активными документами
     const space = await this.prisma.space.findUnique({
@@ -107,18 +104,12 @@ export class SpaceService {
 
   async archiveSpace(spaceId: string, userId: string) {
     // 1. Проверяем права (Только OWNER или SystemAdmin)
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    if (!user?.isSystemAdmin) {
-      const membership = await this.prisma.spaceMember.findUnique({
-        where: { userId_spaceId: { userId, spaceId } },
-      });
-      if (!membership || membership.role !== Role.OWNER) {
-        throw new ForbiddenException(
-          'Only space OWNERs can delete or archive this space',
-        );
-      }
-    }
+    await this.permissions.assertSpaceRole(
+      userId,
+      spaceId,
+      Role.OWNER,
+      'Only space OWNERs can delete or archive this space',
+    );
 
     // 2. Транзакционное каскадное архивирование
 
@@ -143,18 +134,12 @@ export class SpaceService {
 
   async removeSpace(spaceId: string, userId: string) {
     // 1. Проверяем права (Только OWNER или SystemAdmin)
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    if (!user?.isSystemAdmin) {
-      const membership = await this.prisma.spaceMember.findUnique({
-        where: { userId_spaceId: { userId, spaceId } },
-      });
-      if (!membership || membership.role !== Role.OWNER) {
-        throw new ForbiddenException(
-          'Only space OWNERs can hard delete this space',
-        );
-      }
-    }
+    await this.permissions.assertSpaceRole(
+      userId,
+      spaceId,
+      Role.OWNER,
+      'Only space OWNERs can hard delete this space',
+    );
 
     // Физическое удаление пространства.
     // Если в Prisma Schema у тебя настроено onDelete: Cascade для Document -> Space,
@@ -168,22 +153,12 @@ export class SpaceService {
 
   async updateSpace(spaceId: string, userId: string, dto: UpdateSpaceDto) {
     // 1. Проверяем права (Только OWNER, EDITOR или SystemAdmin)
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    if (!user?.isSystemAdmin) {
-      const membership = await this.prisma.spaceMember.findUnique({
-        where: { userId_spaceId: { userId, spaceId } },
-      });
-
-      if (
-        !membership ||
-        (membership.role !== Role.OWNER && membership.role !== Role.EDITOR)
-      ) {
-        throw new ForbiddenException(
-          'Only OWNERs and EDITORs can update space details',
-        );
-      }
-    }
+    await this.permissions.assertSpaceRole(
+      userId,
+      spaceId,
+      Role.EDITOR,
+      'Only OWNERs and EDITORs can update space details',
+    );
 
     // 2. Формируем объект обновления.
     // Маппим title с фронтенда на поле name в базе данных (согласно твоему методу create)
@@ -199,18 +174,12 @@ export class SpaceService {
 
   async restoreSpace(spaceId: string, userId: string) {
     // 1. Проверяем права (Только OWNER или SystemAdmin)
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    if (!user?.isSystemAdmin) {
-      const membership = await this.prisma.spaceMember.findUnique({
-        where: { userId_spaceId: { userId, spaceId } },
-      });
-      if (!membership || membership.role !== Role.OWNER) {
-        throw new ForbiddenException(
-          'Only space OWNERs can restore this space',
-        );
-      }
-    }
+    await this.permissions.assertSpaceRole(
+      userId,
+      spaceId,
+      Role.OWNER,
+      'Only space OWNERs can restore this space',
+    );
 
     return this.prisma.$transaction(async (tx) => {
       // Получаем состояние ДО восстановления, чтобы узнать точное время архивации
@@ -250,31 +219,6 @@ export class SpaceService {
   // ---------------------------------------------------------------------
   // Space membership management
   // ---------------------------------------------------------------------
-
-  private async isSystemAdmin(userId: string): Promise<boolean> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { isSystemAdmin: true },
-    });
-    return user?.isSystemAdmin === true;
-  }
-
-  /** Throws 403 unless the user is a system admin or has one of `roles` in the space. */
-  private async assertSpaceRole(
-    spaceId: string,
-    userId: string,
-    roles: Role[],
-    message: string,
-  ): Promise<void> {
-    if (await this.isSystemAdmin(userId)) return;
-
-    const membership = await this.prisma.spaceMember.findUnique({
-      where: { userId_spaceId: { userId, spaceId } },
-    });
-    if (!membership || !roles.includes(membership.role)) {
-      throw new ForbiddenException(message);
-    }
-  }
 
   private async assertSpaceExists(spaceId: string): Promise<void> {
     const space = await this.prisma.space.findUnique({
@@ -329,10 +273,10 @@ export class SpaceService {
   }
 
   async getMembers(spaceId: string, userId: string) {
-    await this.assertSpaceRole(
-      spaceId,
+    await this.permissions.assertSpaceRole(
       userId,
-      [Role.OWNER, Role.EDITOR, Role.VIEWER],
+      spaceId,
+      Role.VIEWER,
       'You do not have access to this space',
     );
     await this.assertSpaceExists(spaceId);
@@ -348,10 +292,10 @@ export class SpaceService {
     actorId: string,
     dto: ManageSpaceMemberDto,
   ) {
-    await this.assertSpaceRole(
-      spaceId,
+    await this.permissions.assertSpaceRole(
       actorId,
-      [Role.OWNER],
+      spaceId,
+      Role.OWNER,
       'Only space OWNERs can manage members',
     );
     await this.assertSpaceExists(spaceId);
@@ -375,10 +319,10 @@ export class SpaceService {
   }
 
   async removeMember(spaceId: string, actorId: string, targetUserId: string) {
-    await this.assertSpaceRole(
-      spaceId,
+    await this.permissions.assertSpaceRole(
       actorId,
-      [Role.OWNER],
+      spaceId,
+      Role.OWNER,
       'Only space OWNERs can manage members',
     );
     await this.assertSpaceExists(spaceId);

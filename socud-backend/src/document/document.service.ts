@@ -1,6 +1,5 @@
 import {
   Injectable,
-  ForbiddenException,
   NotFoundException,
   BadRequestException,
   Logger,
@@ -16,6 +15,7 @@ import {
 import { Prisma, Role } from '@prisma/client';
 import { compile } from 'html-to-text';
 import { sanitizeDocumentHtml } from '../common/html-sanitizer';
+import { PermissionService } from '../permission/permission.service';
 
 @Injectable()
 export class DocumentService {
@@ -23,6 +23,7 @@ export class DocumentService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private permissions: PermissionService,
   ) {}
 
   private get embedUrl(): string {
@@ -42,93 +43,8 @@ export class DocumentService {
     return headers;
   }
 
-  private async checkSpaceAccess(
-    spaceId: string,
-    userId: string,
-    requiredRoles: Role[],
-  ) {
-    // 1. Проверка на глобального администратора
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { isSystemAdmin: true },
-    });
-
-    if (user?.isSystemAdmin) {
-      return; // Админу можно всё, пропускаем дальнейшие проверки
-    }
-
-    // 2. Стандартная проверка прав в пространстве
-    const membership = await this.prisma.spaceMember.findUnique({
-      where: { userId_spaceId: { userId, spaceId } },
-    });
-
-    if (!membership || !requiredRoles.includes(membership.role)) {
-      throw new ForbiddenException(
-        'You do not have permission to perform this action in the space',
-      );
-    }
-  }
-
-  async verifyDocumentAccess(
-    documentId: string,
-    userId: string,
-    requiredRoles: Role[],
-  ) {
-    const doc = await this.prisma.document.findUnique({
-      where: { id: documentId },
-      include: {
-        members: { where: { userId } },
-        space: {
-          include: { members: { where: { userId } } },
-        },
-      },
-    });
-
-    // 1. Проверка на существование и Soft Delete (isArchived).
-    // Архивный документ (корзина) недоступен никому, включая OWNER пространства
-    // и системного администратора: чтение, правка, публикация, участники и WebSocket.
-    // Восстановление и жёсткое удаление выполняют собственные проверки (restoreDocument/remove).
-    if (!doc || doc.isArchived)
-      throw new NotFoundException('Document not found');
-
-    // 2. Проверка на системного администратора
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { isSystemAdmin: true },
-    });
-
-    if (user?.isSystemAdmin) {
-      return doc; // Админ получает доступ ко всем документам
-    }
-
-    const spaceInherited = doc.space.members[0];
-
-    // 3. АБСОЛЮТНОЕ ПРАВО: Владелец пространства игнорирует любые переопределения
-    if (spaceInherited?.role === Role.OWNER) return doc;
-
-    // 4. ПРЯМОЕ ПЕРЕОПРЕДЕЛЕНИЕ: Проверяем DocumentMember
-    const docOverride = doc.members[0];
-    if (docOverride) {
-      if (!requiredRoles.includes(docOverride.role)) {
-        throw new ForbiddenException(
-          `Insufficient permissions for this document. Required: ${requiredRoles.join()}`,
-        );
-      }
-      return doc;
-    }
-
-    // 5. ФОЛБЭК К ПРОСТРАНСТВУ: Проверяем SpaceMember
-    if (!spaceInherited || !requiredRoles.includes(spaceInherited.role)) {
-      throw new ForbiddenException(
-        `Insufficient permissions in this space. Required: ${requiredRoles.join()}`,
-      );
-    }
-
-    return doc;
-  }
-
   async create(dto: CreateDocumentDto, userId: string) {
-    await this.checkSpaceAccess(dto.spaceId, userId, [Role.OWNER, Role.EDITOR]);
+    await this.permissions.assertSpaceRole(userId, dto.spaceId, Role.EDITOR);
 
     if (dto.parentId) {
       const parent = await this.prisma.document.findUnique({
@@ -154,11 +70,11 @@ export class DocumentService {
 
   async findOne(documentId: string, userId: string) {
     // 1. Проверяем права на чтение
-    const document = await this.verifyDocumentAccess(documentId, userId, [
-      Role.OWNER,
-      Role.EDITOR,
+    const document = await this.permissions.assertDocumentRole(
+      userId,
+      documentId,
       Role.VIEWER,
-    ]);
+    );
 
     // 2. Возвращаем строго те поля, которые нужны фронтенду для режима просмотра
     return {
@@ -173,10 +89,7 @@ export class DocumentService {
   }
 
   async update(documentId: string, userId: string, dto: UpdateDocumentDto) {
-    await this.verifyDocumentAccess(documentId, userId, [
-      Role.OWNER,
-      Role.EDITOR,
-    ]);
+    await this.permissions.assertDocumentRole(userId, documentId, Role.EDITOR);
 
     const updatedDocument = await this.prisma.document.update({
       where: { id: documentId },
@@ -191,7 +104,7 @@ export class DocumentService {
 
   // 1. Мягкое удаление (Архивация)
   async archive(documentId: string, userId: string) {
-    await this.verifyDocumentAccess(documentId, userId, ['OWNER'] as any);
+    await this.permissions.assertDocumentRole(userId, documentId, Role.OWNER);
 
     return this.prisma.document.update({
       where: { id: documentId },
@@ -204,28 +117,12 @@ export class DocumentService {
 
   // 3. Жесткое удаление (Hard Delete)
   async remove(documentId: string, userId: string) {
-    // Убеждаемся, что удалять могут только OWNER.
-    // Примечание: verifyDocumentAccess возвращает 404 для архивных документов,
-    // поэтому здесь используется собственная проверка прав: удалять можно и из корзины.
-
-    const doc = await this.prisma.document.findUnique({
-      where: { id: documentId },
-      include: {
-        members: { where: { userId } },
-        space: { include: { members: { where: { userId } } } },
-      },
-    });
-
-    if (!doc) throw new NotFoundException('Document not found');
-
-    const isOwner =
-      doc.members[0]?.role === 'OWNER' ||
-      doc.space.members[0]?.role === 'OWNER';
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    if (!isOwner && !user?.isSystemAdmin) {
-      throw new ForbiddenException('Only OWNERs can hard delete this document');
-    }
+    // Удалять могут только OWNER (и из корзины: assertDocumentOwner видит архивные документы).
+    await this.permissions.assertDocumentOwner(
+      userId,
+      documentId,
+      'Only OWNERs can hard delete this document',
+    );
 
     await this.prisma.document.delete({
       where: { id: documentId },
@@ -239,7 +136,7 @@ export class DocumentService {
     authorId: string,
     dto: ManageDocumentMemberDto,
   ) {
-    await this.verifyDocumentAccess(documentId, authorId, [Role.OWNER]);
+    await this.permissions.assertDocumentRole(authorId, documentId, Role.OWNER);
 
     const target = await this.prisma.user.findUnique({
       where: { id: dto.userId },
@@ -259,7 +156,7 @@ export class DocumentService {
     authorId: string,
     targetUserId: string,
   ) {
-    await this.verifyDocumentAccess(documentId, authorId, [Role.OWNER]);
+    await this.permissions.assertDocumentRole(authorId, documentId, Role.OWNER);
 
     try {
       await this.prisma.documentMember.delete({
@@ -272,17 +169,7 @@ export class DocumentService {
   }
 
   async findRecent(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    const whereClause = user?.isSystemAdmin
-      ? { isArchived: false }
-      : {
-          isArchived: false,
-          OR: [
-            { space: { members: { some: { userId } } } },
-            { members: { some: { userId } } },
-          ],
-        };
+    const whereClause = await this.permissions.accessibleDocumentsWhere(userId);
 
     return this.prisma.document.findMany({
       where: whereClause,
@@ -305,10 +192,7 @@ export class DocumentService {
     dto: PublishDocumentDto,
   ) {
     // 1. Проверка прав на запись (Только OWNER или EDITOR могут публиковать)
-    await this.verifyDocumentAccess(documentId, userId, [
-      'OWNER',
-      'EDITOR',
-    ] as any);
+    await this.permissions.assertDocumentRole(userId, documentId, Role.EDITOR);
 
     // 2. Санитизация: в БД попадает только HTML из белого списка (защита от stored XSS)
     const html = sanitizeDocumentHtml(dto.html);
@@ -418,16 +302,7 @@ export class DocumentService {
 
   public async hybridSearch(userId: string, query: string) {
     // 1. Получаем ID всех доступных документов (IDOR фильтр)
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const whereClause = user?.isSystemAdmin
-      ? { isArchived: false }
-      : {
-          isArchived: false,
-          OR: [
-            { space: { members: { some: { userId } } } },
-            { members: { some: { userId } } },
-          ],
-        };
+    const whereClause = await this.permissions.accessibleDocumentsWhere(userId);
 
     const accessibleDocs = await this.prisma.document.findMany({
       where: whereClause,
@@ -529,18 +404,8 @@ export class DocumentService {
   }
 
   public async getKnowledgeGraph(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
     // 1. Формируем безопасное условие выборки (IDOR защита)
-    const whereClause = user?.isSystemAdmin
-      ? { isArchived: false }
-      : {
-          isArchived: false,
-          OR: [
-            { space: { members: { some: { userId } } } },
-            { members: { some: { userId } } },
-          ],
-        };
+    const whereClause = await this.permissions.accessibleDocumentsWhere(userId);
 
     // 2. Вытаскиваем ВСЕ доступные узлы за 1 запрос (устранение N+1)
     const documents = await this.prisma.document.findMany({
@@ -579,26 +444,13 @@ export class DocumentService {
   }
 
   async restoreDocument(documentId: string, userId: string) {
-    // 1. Прямая проверка прав (аналогично методу remove)
-    // verifyDocumentAccess здесь не подходит, т.к. он намеренно скрывает архивные документы
-    const doc = await this.prisma.document.findUnique({
-      where: { id: documentId },
-      include: {
-        members: { where: { userId } },
-        space: { include: { members: { where: { userId } } } },
-      },
-    });
-
-    if (!doc) throw new NotFoundException('Document not found');
-
-    const isOwner =
-      doc.members[0]?.role === 'OWNER' ||
-      doc.space.members[0]?.role === 'OWNER';
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    if (!isOwner && !user?.isSystemAdmin) {
-      throw new ForbiddenException('Only OWNERs can restore this document');
-    }
+    // 1. Прямая проверка прав: assertDocumentRole скрывает архивные документы,
+    // поэтому используется assertDocumentOwner (аналогично методу remove)
+    await this.permissions.assertDocumentOwner(
+      userId,
+      documentId,
+      'Only OWNERs can restore this document',
+    );
 
     // 2. Восстанавливаем сам документ
     await this.prisma.document.update({
@@ -617,11 +469,7 @@ export class DocumentService {
 
   async getMembersWithInheritance(documentId: string, userId: string) {
     // Проверяем, что запрашивающий вообще имеет доступ к документу
-    await this.verifyDocumentAccess(documentId, userId, [
-      'OWNER',
-      'EDITOR',
-      'VIEWER',
-    ] as any);
+    await this.permissions.assertDocumentRole(userId, documentId, Role.VIEWER);
 
     const doc = await this.prisma.document.findUnique({
       where: { id: documentId },

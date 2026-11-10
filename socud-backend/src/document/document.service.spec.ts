@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { DocumentService } from './document.service';
+import { PermissionService } from '../permission/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   createConfigServiceMock,
@@ -19,6 +20,7 @@ describe('DocumentService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DocumentService,
+        PermissionService,
         { provide: PrismaService, useValue: createPrismaServiceMock() },
         {
           provide: ConfigService,

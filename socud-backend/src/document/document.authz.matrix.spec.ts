@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { DocumentService } from './document.service';
+import { PermissionService } from '../permission/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   createConfigServiceMock,
@@ -150,6 +151,7 @@ describe('Document authorization matrix', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         DocumentService,
+        PermissionService,
         { provide: PrismaService, useValue: createPrismaServiceMock() },
         { provide: ConfigService, useValue: createConfigServiceMock() },
       ],
