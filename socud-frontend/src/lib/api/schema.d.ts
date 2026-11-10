@@ -584,6 +584,14 @@ export interface components {
             yjsState?: {
                 [key: string]: unknown;
             } | null;
+            /** @description Draft HTML projection of the collaborative state. Internal; may be large. */
+            draftHtml: string | null;
+            /** @description Draft plain-text projection of the collaborative state. Internal; may be large. */
+            draftText: string | null;
+            /** @description Number of the last publish (0 = never published through the versioned flow). */
+            publishedVersion: number;
+            /** @description Published version whose chunks are fully embedded; null = never embedded. */
+            embeddedVersion: number | null;
             /** Format: uuid */
             createdBy: string;
             /** Format: uuid */

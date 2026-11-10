@@ -2551,6 +2551,25 @@
             "nullable": true,
             "description": "Raw Yjs state (JSON-serialised Buffer). Internal; do not rely on it."
           },
+          "draftHtml": {
+            "type": "string",
+            "nullable": true,
+            "description": "Draft HTML projection of the collaborative state. Internal; may be large."
+          },
+          "draftText": {
+            "type": "string",
+            "nullable": true,
+            "description": "Draft plain-text projection of the collaborative state. Internal; may be large."
+          },
+          "publishedVersion": {
+            "type": "number",
+            "description": "Number of the last publish (0 = never published through the versioned flow)."
+          },
+          "embeddedVersion": {
+            "type": "number",
+            "nullable": true,
+            "description": "Published version whose chunks are fully embedded; null = never embedded."
+          },
           "createdBy": {
             "type": "string",
             "format": "uuid"
@@ -2583,6 +2602,10 @@
           "parentId",
           "title",
           "contentHtml",
+          "draftHtml",
+          "draftText",
+          "publishedVersion",
+          "embeddedVersion",
           "createdBy",
           "updatedBy",
           "createdAt",

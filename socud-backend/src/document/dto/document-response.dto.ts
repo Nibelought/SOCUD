@@ -40,6 +40,30 @@ export class DocumentDto {
   })
   yjsState?: Record<string, unknown> | null;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Draft HTML projection of the collaborative state. Internal; may be large.',
+  })
+  draftHtml: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Draft plain-text projection of the collaborative state. Internal; may be large.',
+  })
+  draftText: string | null;
+
+  /** Number of the last publish (0 = never published through the versioned flow). */
+  @ApiProperty()
+  publishedVersion: number;
+
+  /** Published version whose chunks are fully embedded; null = never embedded. */
+  @ApiProperty({ type: Number, nullable: true })
+  embeddedVersion: number | null;
+
   @ApiProperty({ format: 'uuid' })
   createdBy: string;
 
