@@ -11,6 +11,7 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { normalizeEmail } from './dto/email.transform';
+import { hashPassword } from './password';
 
 export const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Absolute lifetime of a login session (token family), regardless of rotation. */
@@ -55,7 +56,7 @@ export class AuthService {
     });
     if (existingUser) throw new ConflictException('Email already taken');
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const passwordHash = await hashPassword(dto.password);
 
     try {
       return await this.prisma.user.create({

@@ -44,6 +44,42 @@ cd socud-frontend && cp .env.example .env.local && npm ci && npm run dev
 
 Then open http://localhost:3001.
 
+## Run everything in Docker
+
+Backend, frontend, PostgreSQL and Redis run as containers. The AI worker does **not**: it needs Apple's MLX (Metal), which is unavailable inside Docker, so it keeps running natively on the Mac (step 4 above) and the backend container reaches it at `http://host.docker.internal:8000`.
+
+```bash
+cp .env.example .env     # set POSTGRES_PASSWORD and JWT_SECRET (openssl rand -hex 32); see the "Full stack" section
+docker compose --profile app up -d --build
+```
+
+- Services: `db` (PostgreSQL + pgvector), `redis` (AOF persistence), `migrate` (one-shot `prisma migrate deploy`, runs before the backend), `backend`, `frontend`. The app services are behind the `app` profile, so `docker compose up -d db redis` starts just the two stores for native development.
+- Networks: `db`, `redis`, `migrate` and `backend` share an `internal` network without external access; only the backend and frontend are on `edge`. Published ports (all on `127.0.0.1`): frontend 3001, backend REST 3000, backend WebSocket 3002, plus PostgreSQL 5432 and Redis 6379 for native development (backend `REDIS_URL=redis://127.0.0.1:6379`).
+- Health checks: the backend exposes unauthenticated `GET /health` (`{"status":"ok","db":"up"}`, or 503 when the database ping fails); `depends_on` waits for `service_healthy`.
+- Why a `migrate` service and not an entrypoint: the runtime image stays free of the Prisma CLI and dev dependencies, and migrations run exactly once even if the backend is scaled.
+- `NEXT_PUBLIC_*` are baked into the frontend image; after changing them run `docker compose --profile app build frontend`.
+- Stop with `docker compose --profile app down` (never add `-v` unless you want to delete the `pgdata` volume).
+- Several stacks side by side: use `-p <name>` plus `POSTGRES_CONTAINER_NAME` and the `*_HOST_PORT` variables from `.env.example`.
+
+### AI worker and `host.docker.internal`
+
+Verified with OrbStack: a process on the host bound to `127.0.0.1` **is** reachable from a container (including the backend container, with `extra_hosts: host.docker.internal:host-gateway`, which `docker-compose.yml` sets for Linux compatibility). The worker therefore keeps `HOST=127.0.0.1`. On Docker Desktop for Mac, loopback-bound hosts are also reachable; on a Linux engine `host-gateway` points at the bridge IP and the worker would need `HOST=0.0.0.0` together with `WORKER_TOKEN` and a firewall rule. Set `AI_WORKER_TOKEN` (backend) equal to `WORKER_TOKEN` (worker).
+
+### First admin
+
+The seed creates the first system admin (`User.isSystemAdmin`, which bypasses membership checks). Put `SEED_ADMIN_EMAIL` and a password of at least 12 characters in `SEED_ADMIN_PASSWORD` into the root `.env` (Docker) or `socud-backend/.env` (native), then:
+
+```bash
+docker compose --profile app run --rm migrate npx prisma db seed   # Docker
+(cd socud-backend && npm run db:seed)                              # native
+```
+
+It is idempotent: an existing admin is left untouched; an existing non-admin user with that email is promoted (password unchanged). Weak or missing passwords are refused, and the password is never printed. Remove the two variables afterwards.
+
+### Logging and Sentry
+
+The backend logs JSON through pino (`nestjs-pino`): one line per request with a request id (`X-Request-Id` is reused when well-formed, otherwise generated, and echoed in the response), `Authorization`, cookies, `X-Worker-Token`, and password/token fields are redacted. Set `LOG_LEVEL` (default `info` in production, `debug` in development). Output is pretty-printed only with `NODE_ENV=development`. Sentry (`@sentry/nestjs`) is enabled only when `SENTRY_DSN` is set and sends no cookies, headers, bodies, or user data. Frontend Sentry is not set up yet.
+
 Before step 1, set `POSTGRES_PASSWORD` in the root `.env` (for example `openssl rand -hex 24`). Before step 3, edit `socud-backend/.env`: set `JWT_SECRET` to a random string of at least 32 characters (`openssl rand -hex 32`) and make `DATABASE_URL` match the root `.env` (`postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>`). The `DATABASE_URL` in `socud-backend/.env.example` still contains the old default password `check-socud`, so it must be changed. The backend refuses to start if a required variable is missing or invalid.
 
 An existing database volume keeps the password it was created with: `POSTGRES_PASSWORD` is applied only when the volume is first initialised. If you already have data from an earlier version, set `POSTGRES_PASSWORD=check-socud` (the old default) in the root `.env`, or change the password inside the database with `ALTER USER` and use the new one in both files.
@@ -61,6 +97,11 @@ Each service ships an example file: `.env.example` (root, for Docker Compose), `
 | `POSTGRES_USER` | no | `dbsocud` | Database user |
 | `POSTGRES_PASSWORD` | yes | none | Database password; `docker compose` refuses to start without it |
 | `POSTGRES_DB` | no | `socud_db` | Database name |
+| `JWT_SECRET` | `--profile app` | none | Backend access token secret (32+ characters) |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | seed only | none | First admin, see "First admin" |
+| `AI_WORKER_URL`, `AI_WORKER_TOKEN`, `LOG_LEVEL`, `SENTRY_DSN`, `CORS_ORIGIN` | no | see `.env.example` | Passed through to the backend container |
+| `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` | no | `http://localhost:3000`, `ws://127.0.0.1:3002` | Frontend build args (browser-facing URLs) |
+| `*_HOST_PORT`, `POSTGRES_CONTAINER_NAME`, `NODE_VERSION` | no | see `.env.example` | Port / name / Node overrides |
 
 ### Backend (`socud-backend/.env`)
 
@@ -76,6 +117,10 @@ Each service ships an example file: `.env.example` (root, for Docker Compose), `
 | `WS_STORE_DEBOUNCE_MS` | no | `2000` | Debounce before Hocuspocus saves a changed document (positive integer, ms) |
 | `CORS_ORIGIN` | no | `http://localhost:3001` | Allowed origin(s); comma-separated list allowed |
 | `NODE_ENV` | no | `development` | `development`, `production`, or `test` |
+| `LOG_LEVEL` | no | `info` (production), `debug` (development) | pino level: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
+| `SENTRY_DSN` | no | none | Enables Sentry error reporting when set |
+| `SENTRY_TRACES_SAMPLE_RATE` | no | `0` | Fraction (0..1) of requests traced |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | seed only | none | Read by `npm run db:seed` only |
 
 ### Frontend (`socud-frontend/.env.local`)
 
@@ -107,13 +152,14 @@ Both variables are inlined at build time, so rebuild after changing them.
 | `socud-backend` | `npm test` | Unit tests (no database needed) |
 | `socud-backend` | `npm run test:e2e` | End-to-end tests (requires running PostgreSQL) |
 | `socud-backend` | `npm run build` | Production build |
+| `socud-backend` | `npm run db:seed` | Create the first admin (see "First admin") |
 | `socud-frontend` | `npm run lint` | ESLint |
 | `socud-frontend` | `npm run typecheck` | TypeScript check |
 | `socud-frontend` | `npm test` | Unit tests (Vitest) |
 | `socud-frontend` | `npm run build` | Production build |
 | `socud-ai-worker` | `python -m py_compile main.py` | Syntax check |
 
-GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker on every push and pull request to `main`. The worker job runs only a syntax check and a minimal `ruff` lint, because installing its dependencies (PyTorch, model download) is too heavy for CI.
+GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker (plus a build-only job for the Docker images) on every push and pull request to `main`. The worker job runs only a syntax check and a minimal `ruff` lint, because installing its dependencies (PyTorch, model download) is too heavy for CI.
 
 ## Security model
 
@@ -131,7 +177,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, f
 ```
 .
 ├── .github/workflows/   CI workflow
-├── docker-compose.yml   PostgreSQL + pgvector
+├── docker-compose.yml   PostgreSQL + pgvector, Redis, backend, frontend (app profile)
 ├── socud-ai-worker/     FastAPI embedding service (main.py, requirements.txt)
 ├── socud-backend/       NestJS API + Hocuspocus
 │   ├── prisma/          schema and migrations

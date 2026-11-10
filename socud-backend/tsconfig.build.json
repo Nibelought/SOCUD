@@ -6,6 +6,7 @@
     "dist",
     "**/*spec.ts",
     "src/test-utils",
-    "prisma.config.ts"
+    "prisma.config.ts",
+    "prisma/seed.ts"
   ]
 }
