@@ -1,5 +1,8 @@
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
-sentence-transformers>=2.2.2
+# Runtime dependencies. Apple Silicon only (MLX); tested with Python 3.14 (Homebrew) and macOS on an M1.
+# Lower bounds are the versions this worker was developed and verified against.
+mlx>=0.32.4
+mlx-lm>=0.32.2
+fastapi>=0.162.3
+uvicorn[standard]>=0.54.0
+pydantic>=2.14.3
+pydantic-settings>=2.16.2
