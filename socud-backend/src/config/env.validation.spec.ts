@@ -165,12 +165,12 @@ describe('validateEnv observability settings', () => {
 });
 
 describe('validateEnv SEARCH_MIN_SIMILARITY', () => {
-  it('defaults to 0.2 and accepts values in -1..1', () => {
-    expect(validateEnv(base).SEARCH_MIN_SIMILARITY).toBe(0.2);
+  it('defaults to 0.35 and accepts values in -1..1', () => {
+    expect(validateEnv(base).SEARCH_MIN_SIMILARITY).toBe(0.35);
     expect(
-      validateEnv({ ...base, SEARCH_MIN_SIMILARITY: '0.35' })
+      validateEnv({ ...base, SEARCH_MIN_SIMILARITY: '0.5' })
         .SEARCH_MIN_SIMILARITY,
-    ).toBe(0.35);
+    ).toBe(0.5);
   });
 
   it('rejects values outside -1..1', () => {
