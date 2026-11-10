@@ -17,6 +17,7 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "lint:ci": "eslint \"{src,apps,libs,test}/**/*.ts\"",
+    "openapi:export": "nest build && node dist/openapi/export-openapi.js openapi.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:seed": "prisma db seed",
     "test": "jest",
