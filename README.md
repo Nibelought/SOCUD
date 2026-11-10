@@ -88,7 +88,7 @@ Both variables are inlined at build time, so rebuild after changing them.
 
 ### AI worker (`socud-ai-worker/.env`, optional)
 
-The worker computes embeddings with `mlx-community/Qwen3-Embedding-4B-4bit-DWQ` using [MLX](https://github.com/ml-explore/mlx), so it runs natively on an Apple Silicon Mac. MLX has no Metal access inside Docker, so it is not containerized; containers reach it at `http://host.docker.internal:8000` (this needs `HOST=0.0.0.0`, then also set `WORKER_TOKEN` and keep the port off the network). Embeddings are 1024-dimensional (Matryoshka-truncated, L2-normalised), last-token pooled; queries get the `Instruct: ...\nQuery:` prefix, documents do not.
+The worker computes embeddings with `mlx-community/Qwen3-Embedding-4B-4bit-DWQ` using [MLX](https://github.com/ml-explore/mlx), so it runs natively on an Apple Silicon Mac. MLX has no Metal access inside Docker, so it is not containerized; containers reach it at `http://host.docker.internal:8000`. This works with the default loopback bind on OrbStack (verified); other Docker runtimes may need `HOST=0.0.0.0` (unverified), in which case also set `WORKER_TOKEN` and keep the port off the network. Embeddings are 1024-dimensional (Matryoshka-truncated, L2-normalised), last-token pooled; queries get the `Instruct: ...\nQuery:` prefix, documents do not.
 
 ```bash
 cd socud-ai-worker

@@ -2,6 +2,7 @@
 # Lower bounds are the versions this worker was developed and verified against.
 mlx>=0.32.4
 mlx-lm>=0.32.2
+numpy>=2.5.4
 fastapi>=0.162.3
 uvicorn[standard]>=0.54.0
 pydantic>=2.14.3
