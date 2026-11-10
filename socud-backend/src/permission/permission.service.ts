@@ -175,6 +175,24 @@ export class PermissionService {
     };
   }
 
+  /**
+   * SQL twin of `accessibleDocumentsWhere` for raw queries (search), so the filter runs inside the
+   * database instead of shipping every accessible id to the app. `alias` is the alias of the
+   * "Document" table in the caller's query. Keep the two in sync: the rule is "not archived and
+   * (system admin or member of the space or member of the document)".
+   */
+  accessibleDocumentsSql(userId: string, alias = 'd'): Prisma.Sql {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) {
+      throw new Error(`Invalid SQL alias: ${alias}`);
+    }
+    const doc = Prisma.raw(alias);
+    return Prisma.sql`(${doc}."isArchived" = false AND (
+      EXISTS (SELECT 1 FROM "User" u WHERE u."id" = ${userId} AND u."isSystemAdmin")
+      OR EXISTS (SELECT 1 FROM "SpaceMember" sm WHERE sm."spaceId" = ${doc}."spaceId" AND sm."userId" = ${userId})
+      OR EXISTS (SELECT 1 FROM "DocumentMember" dm WHERE dm."documentId" = ${doc}."id" AND dm."userId" = ${userId})
+    ))`;
+  }
+
   private async loadDocument(
     userId: string,
     documentId: string,

@@ -425,44 +425,4 @@ describe('DocumentService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
-
-  describe('hybridSearch', () => {
-    it('uses a parameterized query: ids and vector are bound values, not SQL text', async () => {
-      const ids = ['id-1', 'id-2\'); DROP TABLE "Document"; --'];
-      m(prisma.user.findUnique).mockResolvedValue({ isSystemAdmin: true });
-      m(prisma.document.findMany).mockResolvedValue(
-        ids.map((id) => ({ id, title: id, space: { name: 'S' } })),
-      );
-      fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
-        json: () => Promise.resolve({ embeddings: [[0.5, 0.25]] }),
-      } as Response);
-      m(prisma.$queryRaw)
-        .mockResolvedValueOnce([
-          { documentId: 'id-1', textContent: 'semantic hit', score: 0.9 },
-        ])
-        .mockResolvedValueOnce([
-          { documentId: ids[1], textContent: 'keyword hit' },
-        ]);
-
-      const results = await service.hybridSearch('user', 'query');
-
-      expect(
-        (prisma as unknown as Record<string, unknown>)['$queryRawUnsafe'],
-      ).toBeUndefined();
-      const [strings, ...values] = m(prisma.$queryRaw).mock.calls[0] as [
-        TemplateStringsArray,
-        ...unknown[],
-      ];
-      // Static SQL fragments contain no ids or vector literals ...
-      expect(strings.join('?')).not.toContain('DROP TABLE');
-      expect(strings.join('?')).not.toContain('id-1');
-      // ... they are passed as bound parameters (the id list as a Prisma.join fragment).
-      const joined = values.find(
-        (v) => typeof v === 'object' && v !== null && 'values' in v,
-      ) as { values: unknown[] };
-      expect(joined.values).toEqual(ids);
-      expect(values.filter((v) => v === '[0.5,0.25]')).toHaveLength(2);
-      expect(results.map((r) => r.type)).toEqual(['semantic', 'keyword']);
-    });
-  });
 });

@@ -61,14 +61,27 @@ export class EmbeddingClient {
     return vectors;
   }
 
-  async embedBatch(texts: string[], isQuery: boolean): Promise<number[][]> {
+  /**
+   * Embeds one search query (`is_query: true`) with its own, short timeout, so an interactive
+   * request is not held up by the long timeout meant for document batches.
+   */
+  async embedQuery(text: string, timeoutMs: number): Promise<number[]> {
+    const [vector] = await this.embedBatch([text], true, timeoutMs);
+    return vector;
+  }
+
+  async embedBatch(
+    texts: string[],
+    isQuery: boolean,
+    timeoutMs: number = this.timeoutMs,
+  ): Promise<number[][]> {
     let res: Response;
     try {
       res = await fetch(this.url, {
         method: 'POST',
         headers: this.headers,
         body: JSON.stringify({ texts, is_query: isQuery }),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
       throw new EmbeddingError(

@@ -21,11 +21,15 @@ import {
   UpdateDocumentDto,
 } from './dto/document.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SearchService } from '../search/search.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('document')
 export class DocumentController {
-  constructor(private readonly documentService: DocumentService) {}
+  constructor(
+    private readonly documentService: DocumentService,
+    private readonly searchService: SearchService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -49,7 +53,7 @@ export class DocumentController {
   @UseGuards(JwtAuthGuard)
   async search(@Request() req, @Query('q') query: string) {
     if (!query || query.trim().length === 0) return [];
-    return this.documentService.hybridSearch(req.user.id, query);
+    return this.searchService.search(req.user.id, query);
   }
 
   @Get(':id')

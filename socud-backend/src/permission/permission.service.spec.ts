@@ -315,4 +315,24 @@ describe('PermissionService', () => {
       });
     });
   });
+
+  describe('accessibleDocumentsSql', () => {
+    it('is the SQL twin of accessibleDocumentsWhere: archived, admin, space member, document member', () => {
+      const sql = service.accessibleDocumentsSql(USER, 'doc');
+      const text = sql.strings.join('?');
+      expect(text).toContain('doc."isArchived" = false');
+      expect(text).toContain('"isSystemAdmin"');
+      expect(text).toContain('"SpaceMember"');
+      expect(text).toContain('"DocumentMember"');
+      // the user id only ever appears as a bound value
+      expect(text).not.toContain(USER);
+      expect(sql.values).toEqual([USER, USER, USER]);
+    });
+
+    it('rejects an alias that is not a plain identifier', () => {
+      expect(() =>
+        service.accessibleDocumentsSql(USER, 'd; DROP TABLE x'),
+      ).toThrow('Invalid SQL alias');
+    });
+  });
 });

@@ -128,4 +128,27 @@ describe('EmbeddingClient', () => {
         .dim,
     ).toBe(1024);
   });
+
+  it('embedQuery sends a single is_query text with its own timeout', async () => {
+    fetchMock.mockResolvedValue(ok([vec(4)]));
+    const timeout = jest.spyOn(AbortSignal, 'timeout');
+
+    await expect(build().embedQuery('как деплоить', 2500)).resolves.toEqual(
+      vec(4),
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      texts: ['как деплоить'],
+      is_query: true,
+    });
+    expect(timeout).toHaveBeenCalledWith(2500);
+  });
+
+  it('embedQuery fails on a wrong dimension or an HTTP error', async () => {
+    fetchMock.mockResolvedValueOnce(ok([vec(3)]));
+    await expect(build().embedQuery('q', 1000)).rejects.toThrow(/dimension 3/);
+    fetchMock.mockResolvedValueOnce(fail(503));
+    await expect(build().embedQuery('q', 1000)).rejects.toThrow(/503/);
+  });
 });

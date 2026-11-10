@@ -432,14 +432,13 @@ describe('Document authorization matrix', () => {
   });
 
   describe('list endpoints are scoped to the caller', () => {
-    it('findRecent, graph and search filter by membership for normal users', async () => {
+    it('findRecent and graph filter by membership for normal users', async () => {
       arrange(SCENARIOS[2]);
       m(prisma.document.findMany).mockResolvedValue([]);
       m(prisma.documentLink.findMany).mockResolvedValue([]);
 
       await service.findRecent(ACTOR);
       await service.getKnowledgeGraph(ACTOR);
-      await service.hybridSearch(ACTOR, 'q');
 
       const scoped = {
         isArchived: false,
@@ -451,7 +450,7 @@ describe('Document authorization matrix', () => {
       for (const call of m(prisma.document.findMany).mock.calls) {
         expect((call[0] as { where: unknown }).where).toEqual(scoped);
       }
-      expect(m(prisma.document.findMany)).toHaveBeenCalledTimes(3);
+      expect(m(prisma.document.findMany)).toHaveBeenCalledTimes(2);
     });
 
     it('admins only get the isArchived filter', async () => {
