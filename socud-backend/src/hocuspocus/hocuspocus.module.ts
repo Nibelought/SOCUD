@@ -1,11 +1,10 @@
 import { Module } from '@nestjs/common';
 import { HocuspocusService } from './hocuspocus.service';
-import { DocumentModule } from '../document/document.module';
+import { PermissionModule } from '../permission/permission.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-  // Импортируем модули, чтобы использовать их экспортированные сервисы
-  imports: [PrismaModule, DocumentModule],
+  imports: [PrismaModule, PermissionModule],
   providers: [HocuspocusService],
 })
 export class HocuspocusModule {}
