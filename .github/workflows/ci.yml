@@ -61,6 +61,49 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  docker:
+    name: Docker images (build only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Read Node version
+        id: node
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Build backend image (runtime)
+        uses: docker/build-push-action@v6
+        with:
+          context: socud-backend
+          target: runtime
+          push: false
+          build-args: NODE_VERSION=${{ steps.node.outputs.version }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build backend image (migrate)
+        uses: docker/build-push-action@v6
+        with:
+          context: socud-backend
+          target: migrate
+          push: false
+          build-args: NODE_VERSION=${{ steps.node.outputs.version }}
+          cache-from: type=gha,scope=backend
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: socud-frontend
+          push: false
+          build-args: NODE_VERSION=${{ steps.node.outputs.version }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      - name: Validate compose file
+        run: POSTGRES_PASSWORD=ci-dummy docker compose --profile app config -q
+
   ai-worker:
     name: AI worker (Python)
     runs-on: ubuntu-latest
