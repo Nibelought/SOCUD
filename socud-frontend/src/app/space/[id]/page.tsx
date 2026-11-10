@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, FileText, Plus, Shield, Loader2, Edit, Settings } from "lucide-react";
 import AccessManagerModal from "@/components/modals/AccessManagerModal";
 import { api, type components } from "@/lib/api/client";
+import { sessionLostLoginUrl } from "@/lib/auth";
 
 type Space = components["schemas"]["SpaceDetailDto"];
 
@@ -23,7 +24,7 @@ export default function SpaceDetailsPage() {
 
     useEffect(() => {
         const token = localStorage.getItem("socud_token");
-        if (!token) return router.push("/login");
+        if (!token) return router.push(sessionLostLoginUrl());
 
         // Извлекаем ID текущего пользователя из JWT
         try {
@@ -31,7 +32,7 @@ export default function SpaceDetailsPage() {
             setCurrentUserId(payload.sub);
         } catch {
             console.error("Invalid token");
-            return router.push("/login");
+            return router.push(sessionLostLoginUrl());
         }
 
         api.GET("/space/{id}", { params: { path: { id: spaceId } } })

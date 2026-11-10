@@ -6,6 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { api, type components } from '@/lib/api/client';
+import { sessionLostLoginUrl } from "@/lib/auth";
 
 // КРИТИЧЕСКИ ВАЖНО: Отключаем SSR
 const DynamicGraph = dynamic(
@@ -20,7 +21,7 @@ export default function KnowledgeGraphPage() {
 
     useEffect(() => {
         const token = localStorage.getItem("socud_token");
-        if (!token) return router.push("/login");
+        if (!token) return router.push(sessionLostLoginUrl());
 
         api.GET('/document/graph')
             .then(({ data }) => {

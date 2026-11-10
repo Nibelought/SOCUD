@@ -77,6 +77,13 @@ export function refreshAccessToken(): Promise<string | null> {
     return refreshInFlight;
 }
 
+/** /login URL for a lost session, keeping the current page as `?next=` (browser only). */
+export const sessionLostLoginUrl = (): string => {
+    if (!isBrowser) return loginUrl({ expired: true });
+    const { pathname, search } = window.location;
+    return loginUrl({ expired: true, next: `${pathname}${search}` });
+};
+
 /**
  * Sends the browser to /login. `expired` marks a failed/lost session so the proxy does not bounce
  * a stale session hint straight back to the app; the current page is kept as `?next=`.

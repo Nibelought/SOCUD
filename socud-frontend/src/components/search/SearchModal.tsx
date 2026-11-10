@@ -3,16 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X, Loader2, Sparkles, Text, FileText } from "lucide-react";
-import { API_URL } from "@/lib/config";
+import { api, type components } from "@/lib/api/client";
 
-interface SearchResult {
-    id: string;
-    title: string;
-    space: string;
-    snippet: string;
-    type: 'semantic' | 'keyword';
-    score: number | null;
-}
+type SearchResult = components["schemas"]["SearchResultDto"];
 
 interface SearchModalProps {
     isOpen: boolean;
@@ -59,13 +52,11 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
         setLoading(true);
         const delayDebounceFn = setTimeout(async () => {
             try {
-                const token = localStorage.getItem("socud_token");
-                const res = await fetch(`${API_URL}/document/search?q=${encodeURIComponent(query)}`, {
-                    headers: { "Authorization": `Bearer ${token}` }
+                const { data, response } = await api.GET("/document/search", {
+                    params: { query: { q: query } },
                 });
 
-                if (res.ok) {
-                    const data = await res.json();
+                if (response.ok && data) {
                     setResults(data);
                 }
             } catch (err) {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Shield, ArrowLeft } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api/client";
+import { sessionLostLoginUrl } from "@/lib/auth";
 
 export default function CreateSpacePage() {
     const router = useRouter();
@@ -19,7 +20,7 @@ export default function CreateSpacePage() {
         setError("");
 
         const token = localStorage.getItem("socud_token");
-        if (!token) return router.push("/login");
+        if (!token) return router.push(sessionLostLoginUrl());
 
         try {
             // Bearer + refresh-on-401 are handled by the client

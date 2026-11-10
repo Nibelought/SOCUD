@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, ArrowLeft, Loader2 } from "lucide-react";
 import { api, apiErrorMessage, type components } from "@/lib/api/client";
+import { sessionLostLoginUrl } from "@/lib/auth";
 
 type Space = components["schemas"]["SpaceWithCountDto"];
 
@@ -20,7 +21,7 @@ export default function CreateDocumentPage() {
     useEffect(() => {
         const fetchSpaces = async () => {
             const token = localStorage.getItem("socud_token");
-            if (!token) return router.push("/login");
+            if (!token) return router.push(sessionLostLoginUrl());
 
             try {
                 const { data, response } = await api.GET("/space/my");

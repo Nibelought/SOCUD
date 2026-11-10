@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Share2 } from "lucide-react";
 import SearchModal from "@/components/search/SearchModal";
-import { logout } from '@/lib/auth';
+import { logout, sessionLostLoginUrl } from '@/lib/auth';
 import { api, type components } from '@/lib/api/client';
 
 // Типы данных с бэкенда (генерируются из openapi.json)
@@ -41,7 +41,7 @@ export default function DashboardPage() {
     useEffect(() => {
         const token = localStorage.getItem("socud_token");
         if (!token) {
-            router.push("/login");
+            router.push(sessionLostLoginUrl());
             return;
         }
 
