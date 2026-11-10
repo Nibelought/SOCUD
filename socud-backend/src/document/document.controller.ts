@@ -9,6 +9,7 @@ import {
   Put,
   UseGuards,
   Request,
+  ParseIntPipe,
   ParseUUIDPipe,
   Query,
 } from '@nestjs/common';
@@ -133,6 +134,22 @@ export class DocumentController {
       req.user.id,
       manageMemberDto,
     );
+  }
+
+  @Get(':id/versions')
+  @UseGuards(JwtAuthGuard)
+  async listVersions(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
+    return this.documentService.listVersions(id, req.user.id);
+  }
+
+  @Get(':id/versions/:version')
+  @UseGuards(JwtAuthGuard)
+  async getVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('version', ParseIntPipe) version: number,
+    @Request() req,
+  ) {
+    return this.documentService.getVersion(id, version, req.user.id);
   }
 
   @Post(':id/publish')

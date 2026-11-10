@@ -112,7 +112,10 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
   let prisma: {
     document: { findUnique: jest.Mock; update: jest.Mock };
   };
-  let documentService: { verifyDocumentAccess: jest.Mock };
+  let documentService: {
+    verifyDocumentAccess: jest.Mock;
+    registerLiveStateProvider: jest.Mock;
+  };
 
   async function startServer(recheckMs: number) {
     const config = createConfigServiceMock({
@@ -179,6 +182,7 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
       },
     };
     documentService = {
+      registerLiveStateProvider: jest.fn(),
       verifyDocumentAccess: jest.fn(
         (_docId: string, userId: string, required: Role[]) => {
           const role = roles.get(userId);
@@ -253,6 +257,66 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
           data: expect.objectContaining({ updatedBy: EDITOR_1 }) as unknown,
         }),
       );
+    });
+
+    it('renders draft HTML and text from the Yjs state when storing', async () => {
+      const editor = await connect(sign(EDITOR_1));
+      // What the editor's Collaboration extension writes: <paragraph>Hello draft</paragraph>.
+      const paragraph = new Y.XmlElement('paragraph');
+      paragraph.insert(0, [new Y.XmlText('Hello draft')]);
+      editor.document.getXmlFragment('default').insert(0, [paragraph]);
+
+      await waitFor(
+        () =>
+          prisma.document.update.mock.calls.some(
+            (c: [{ data: { draftHtml?: string } }]) =>
+              c[0].data.draftHtml === '<p>Hello draft</p>',
+          ),
+        'onStoreDocument to render the draft',
+      );
+      expect(prisma.document.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            draftHtml: '<p>Hello draft</p>',
+            draftText: 'Hello draft',
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('still persists the Yjs state when the draft cannot be rendered', async () => {
+      const editor = await connect(sign(EDITOR_1));
+      editor.document
+        .getXmlFragment('default')
+        .insert(0, [new Y.XmlElement('notInTheSchema')]);
+
+      await waitFor(
+        () => prisma.document.update.mock.calls.length > 0,
+        'onStoreDocument to persist',
+      );
+      const data = (
+        prisma.document.update.mock.calls.at(-1) as [
+          { data: Record<string, unknown> },
+        ]
+      )[0].data;
+      expect(data.yjsState).toBeInstanceOf(Buffer);
+      expect(data).not.toHaveProperty('draftHtml');
+    });
+
+    it('exposes the live in-memory state to Publish', async () => {
+      const editor = await connect(sign(EDITOR_1));
+      editor.text.insert(0, 'live');
+      await waitFor(
+        () => prisma.document.update.mock.calls.length > 0,
+        'first store',
+      );
+
+      const [provider] = documentService.registerLiveStateProvider.mock
+        .calls[0] as [(id: string) => Uint8Array | null];
+      expect(provider('unknown-doc')).toBeNull();
+      const live = new Y.Doc();
+      Y.applyUpdate(live, provider(DOC_ID)!);
+      expect(live.getText('t').toJSON()).toBe('live');
     });
 
     it('loads the persisted state for new clients', async () => {
