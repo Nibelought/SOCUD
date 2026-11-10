@@ -20,6 +20,7 @@ model User {
 
   documentsAuthored Document[] @relation("DocumentAuthor")
   documentsUpdated  Document[] @relation("DocumentUpdater")
+  documentVersions  DocumentVersion[]
 
   refreshTokens RefreshToken[]
 }
@@ -94,8 +95,16 @@ model Document {
   spaceId     String
   parentId    String?
   title       String
+  // Published content: frozen by Publish, what viewers and search see.
   contentHtml String?
   yjsState    Bytes?
+  // Draft projection of yjsState (sanitized HTML / plain text), refreshed by Hocuspocus onStoreDocument.
+  draftHtml   String?
+  draftText   String?
+  // Number of the last Publish (0 = never published through the versioned flow).
+  publishedVersion Int  @default(0)
+  // publishedVersion whose chunks are fully embedded; NULL = never. Drives idempotent backfill.
+  embeddedVersion  Int?
 
   createdBy String
   updatedBy String?
@@ -113,6 +122,7 @@ model Document {
   children Document[]       @relation("DocumentHierarchy")
   members  DocumentMember[]
   chunks   DocumentChunk[]
+  versions DocumentVersion[]
 
   sourceLinks DocumentLink[] @relation("SourceLinks")
   targetLinks DocumentLink[] @relation("TargetLinks")
@@ -126,9 +136,11 @@ model Document {
 model DocumentChunk {
   id          String @id @default(uuid())
   documentId  String
+  chunkIndex  Int    @default(0)
   textContent String
 
-  embedding Unsupported("vector(768)")
+  // NULL until the embed-document job has stored the vector (Qwen3-Embedding, 1024 dims).
+  embedding Unsupported("vector(1024)")?
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -136,6 +148,24 @@ model DocumentChunk {
   // vector_cosine_ops
   @@index([embedding], map: "DocumentChunk_embedding_hnsw_idx")
   @@index([documentId])
+}
+
+// Immutable snapshot taken by Publish.
+model DocumentVersion {
+  id          String   @id @default(uuid())
+  documentId  String
+  version     Int
+  title       String
+  contentHtml String
+  yjsState    Bytes?
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [createdBy], references: [id])
+
+  @@unique([documentId, version])
+  @@index([documentId, createdAt])
 }
 
 model DocumentLink {
