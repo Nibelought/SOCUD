@@ -125,6 +125,24 @@ export class EnvironmentVariables {
   @Min(0)
   EMBED_RECONCILE_INTERVAL_MS: number = 600000;
 
+  /**
+   * Serves Swagger UI at /api/docs and the OpenAPI JSON at /api/docs-json.
+   * Unset: enabled unless NODE_ENV=production (see `isSwaggerEnabled`).
+   */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  SWAGGER_ENABLED?: boolean;
+
+  /**
+   * Optional `Domain` attribute of the `socud_session` hint cookie, needed only when the web app and
+   * the API live on different subdomains (e.g. `.example.com`). Unset: host-only cookie.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  SESSION_COOKIE_DOMAIN?: string;
+
   /** Minimum interval between access re-validations of one Hocuspocus connection, in ms. */
   @IsOptional()
   @Type(() => Number)

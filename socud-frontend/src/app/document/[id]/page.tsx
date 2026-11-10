@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { sessionLostLoginUrl } from "@/lib/auth";
 
 const DynamicEditor = dynamic(
     () => import("@/components/editor/DocumentEditor"),
@@ -23,7 +24,7 @@ export default function DocumentPage() {
     useEffect(() => {
         const storedToken = localStorage.getItem("socud_token");
         if (!storedToken) {
-            router.push("/login");
+            router.push(sessionLostLoginUrl());
             return;
         }
         setToken(storedToken);

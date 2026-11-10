@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { API_URL } from "@/lib/config";
+import { publicApi } from '@/lib/api/public-client';
+import { apiErrorMessage } from '@/lib/api/errors';
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -18,16 +19,12 @@ export default function RegisterPage() {
         setError("");
 
         try {
-            const res = await fetch(`${API_URL}/auth/register`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ email, password }),
+            const { error, response } = await publicApi.POST('/auth/register', {
+                body: { email, password },
             });
 
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.message || "Registration failed");
+            if (!response.ok) {
+                throw new Error(apiErrorMessage(error, "Registration failed"));
             }
 
             // После успешной регистрации перенаправляем на логин

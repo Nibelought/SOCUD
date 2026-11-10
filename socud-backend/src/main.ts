@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { parseCorsOrigins } from './config/env.validation';
 import { Logger } from 'nestjs-pino';
 import { SentryGlobalFilter } from '@sentry/nestjs/setup';
+import { isSwaggerEnabled, setupSwagger } from './openapi/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -36,6 +37,17 @@ async function bootstrap() {
     origin: parseCorsOrigins(config.getOrThrow<string>('CORS_ORIGIN')),
     credentials: true, // refresh-токен живёт в httpOnly cookie
   });
+
+  // Swagger UI + JSON (off in production unless SWAGGER_ENABLED=true). After helmet(), so only the
+  // docs routes get their relaxed CSP; every other route keeps the strict one.
+  if (
+    isSwaggerEnabled({
+      SWAGGER_ENABLED: config.get<boolean>('SWAGGER_ENABLED'),
+      NODE_ENV: config.get<string>('NODE_ENV'),
+    })
+  ) {
+    setupSwagger(app);
+  }
 
   await app.listen(config.getOrThrow<number>('PORT'));
 }

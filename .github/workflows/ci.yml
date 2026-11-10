@@ -39,6 +39,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test -- --ci
       - run: npm run build
+      # The committed OpenAPI document must match the code (regenerate with `npm run openapi:export`).
+      - name: OpenAPI document is up to date
+        run: |
+          npm run openapi:export
+          git diff --exit-code -- openapi.json
 
   frontend:
     name: Frontend (Next.js)
@@ -56,6 +61,11 @@ jobs:
           cache-dependency-path: socud-frontend/package-lock.json
 
       - run: npm ci
+      # Generated API types must match ../socud-backend/openapi.json (regenerate with `npm run api:gen`).
+      - name: API types are up to date
+        run: |
+          npm run api:gen
+          git diff --exit-code -- src/lib/api/
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
