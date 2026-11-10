@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SpaceService } from './space.service';
+import { PermissionService } from '../permission/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createPrismaServiceMock } from '../test-utils/mocks';
 
@@ -10,6 +11,7 @@ describe('SpaceService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SpaceService,
+        PermissionService,
         { provide: PrismaService, useValue: createPrismaServiceMock() },
       ],
     }).compile();

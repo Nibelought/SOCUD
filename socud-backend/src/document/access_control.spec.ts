@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DocumentService } from './document.service';
+import { PermissionService } from '../permission/permission.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { createConfigServiceMock } from '../test-utils/mocks';
@@ -9,6 +10,7 @@ import { CreateDocumentDto, UpdateDocumentDto } from './dto/document.dto';
 
 describe('DocumentService Access Control', () => {
   let service: DocumentService;
+  let permissions: PermissionService;
 
   const mockPrisma = {
     user: { findUnique: jest.fn() },
@@ -26,12 +28,14 @@ describe('DocumentService Access Control', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DocumentService,
+        PermissionService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ConfigService, useValue: createConfigServiceMock() },
       ],
     }).compile();
 
     service = module.get<DocumentService>(DocumentService);
+    permissions = module.get(PermissionService);
     jest.resetAllMocks();
   });
 
@@ -203,11 +207,7 @@ describe('DocumentService Access Control', () => {
       });
 
       await expect(
-        service.verifyDocumentAccess('doc-uuid', 'admin-uuid', [
-          Role.OWNER,
-          Role.EDITOR,
-          Role.VIEWER,
-        ]),
+        permissions.assertDocumentRole('admin-uuid', 'doc-uuid', Role.VIEWER),
       ).rejects.toThrow(NotFoundException);
     });
 

@@ -18,7 +18,10 @@ import {
 } from '@hocuspocus/server';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { DocumentService } from '../document/document.service';
+import {
+  PermissionService,
+  roleSatisfies,
+} from '../permission/permission.service';
 import { Role } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
 import * as Y from 'yjs';
@@ -69,7 +72,7 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private prisma: PrismaService,
-    private documentService: DocumentService,
+    private permissions: PermissionService,
     private config: ConfigService,
   ) {}
 
@@ -240,19 +243,11 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
     documentId: string,
     userId: string,
   ): Promise<AccessLevel> {
-    try {
-      await this.documentService.verifyDocumentAccess(documentId, userId, [
-        Role.OWNER,
-        Role.EDITOR,
-      ]);
-      return 'write';
-    } catch (err) {
-      if (!(err instanceof ForbiddenException)) throw err;
-    }
-    await this.documentService.verifyDocumentAccess(documentId, userId, [
-      Role.VIEWER,
-    ]);
-    return 'read';
+    // 404 for a missing/archived document; `null` role = not a member.
+    const role = await this.permissions.resolveDocumentRole(userId, documentId);
+    if (roleSatisfies(role, Role.EDITOR)) return 'write';
+    if (roleSatisfies(role, Role.VIEWER)) return 'read';
+    throw new ForbiddenException('No access to this document');
   }
 
   /**
