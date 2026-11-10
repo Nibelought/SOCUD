@@ -100,14 +100,16 @@ export class EnvironmentVariables {
 
   /**
    * Search: semantic hits with a cosine similarity below this are dropped (the nearest chunks are
-   * otherwise returned even when nothing is relevant). Calibrate against the real embedding model.
+   * otherwise returned even when nothing is relevant). 0.35 was calibrated with Qwen3-Embedding-4B
+   * (1024-dim MRL, query instruction): best chunks of relevant documents scored 0.44-0.78 (median
+   * 0.62), best chunks for queries with no relevant document 0.13-0.39 (median 0.28).
    */
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(-1)
   @Max(1)
-  SEARCH_MIN_SIMILARITY: number = 0.2;
+  SEARCH_MIN_SIMILARITY: number = 0.35;
 
   /** Master switch of the queue (producer + consumer). Default: on, except NODE_ENV=test. */
   @IsOptional()
