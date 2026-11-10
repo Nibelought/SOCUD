@@ -53,8 +53,8 @@ cp .env.example .env     # set POSTGRES_PASSWORD and JWT_SECRET (openssl rand -h
 docker compose --profile app up -d --build
 ```
 
-- Services: `db` (PostgreSQL + pgvector), `redis` (AOF persistence), `migrate` (one-shot `prisma migrate deploy`, runs before the backend), `backend`, `frontend`. The app services are behind the `app` profile, so plain `docker compose up -d db` still starts only the database for native development.
-- Networks: `db`, `redis`, `migrate` and `backend` share an `internal` network without external access; only the backend and frontend are on `edge`. Published ports (all on `127.0.0.1`): frontend 3001, backend REST 3000, backend WebSocket 3002, plus PostgreSQL 5432 for native development. Redis is not published; for native development install Redis locally (`brew install redis && redis-server`).
+- Services: `db` (PostgreSQL + pgvector), `redis` (AOF persistence), `migrate` (one-shot `prisma migrate deploy`, runs before the backend), `backend`, `frontend`. The app services are behind the `app` profile, so `docker compose up -d db redis` starts just the two stores for native development.
+- Networks: `db`, `redis`, `migrate` and `backend` share an `internal` network without external access; only the backend and frontend are on `edge`. Published ports (all on `127.0.0.1`): frontend 3001, backend REST 3000, backend WebSocket 3002, plus PostgreSQL 5432 and Redis 6379 for native development (backend `REDIS_URL=redis://127.0.0.1:6379`).
 - Health checks: the backend exposes unauthenticated `GET /health` (`{"status":"ok","db":"up"}`, or 503 when the database ping fails); `depends_on` waits for `service_healthy`.
 - Why a `migrate` service and not an entrypoint: the runtime image stays free of the Prisma CLI and dev dependencies, and migrations run exactly once even if the backend is scaled.
 - `NEXT_PUBLIC_*` are baked into the frontend image; after changing them run `docker compose --profile app build frontend`.
