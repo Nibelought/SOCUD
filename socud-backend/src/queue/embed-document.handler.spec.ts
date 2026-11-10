@@ -11,7 +11,7 @@ const DOC = 'doc-1';
 
 describe('EmbedDocumentHandler', () => {
   let prisma: jest.Mocked<PrismaService>;
-  let embeddings: { embedBatch: jest.Mock };
+  let embeddings: { batchSize: number; embedBatch: jest.Mock };
   let handler: EmbedDocumentHandler;
 
   const chunks = (n: number) =>
@@ -29,6 +29,7 @@ describe('EmbedDocumentHandler', () => {
     m(prisma.document.updateMany).mockResolvedValue({ count: 1 });
     m(prisma.$executeRaw).mockResolvedValue(1);
     embeddings = {
+      batchSize: 32,
       embedBatch: jest
         .fn()
         .mockImplementation((texts: string[]) =>

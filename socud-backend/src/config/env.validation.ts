@@ -81,7 +81,22 @@ export class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
   @Min(1000)
-  EMBED_TIMEOUT_MS: number = 60000;
+  EMBED_TIMEOUT_MS: number = 180000;
+
+  /** Timeout of a search-query /embed call, in ms. Short: search falls back to keyword results. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  EMBED_QUERY_TIMEOUT_MS: number = 10000;
+
+  /** Texts per /embed call when embedding documents (the worker accepts at most 32). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(32)
+  EMBED_BATCH_SIZE: number = 4;
 
   /** Master switch of the queue (producer + consumer). Default: on, except NODE_ENV=test. */
   @IsOptional()

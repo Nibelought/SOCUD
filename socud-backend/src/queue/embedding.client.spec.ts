@@ -61,7 +61,7 @@ describe('EmbeddingClient', () => {
     });
     const texts = Array.from({ length: 70 }, (_, i) => String(i));
 
-    const out = await build().embed(texts);
+    const out = await build({ EMBED_BATCH_SIZE: 32 }).embed(texts);
 
     const sizes = fetchMock.mock.calls.map(
       (c: [string, RequestInit]) =>
@@ -69,6 +69,28 @@ describe('EmbeddingClient', () => {
     );
     expect(sizes).toEqual([32, 32, 6]);
     expect(out.map((v) => v[0])).toEqual(texts.map(Number));
+  });
+
+  it('defaults to batches of 4 and clamps EMBED_BATCH_SIZE to the worker limit of 32', () => {
+    expect(build().batchSize).toBe(4);
+    expect(build({ EMBED_BATCH_SIZE: 8 }).batchSize).toBe(8);
+    expect(build({ EMBED_BATCH_SIZE: 100 }).batchSize).toBe(32);
+    expect(build({ EMBED_BATCH_SIZE: 0 }).batchSize).toBe(4);
+  });
+
+  it('uses the short query timeout for is_query calls and the long one for documents', async () => {
+    const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+    fetchMock.mockResolvedValue(ok([[1, 0, 0, 0]]));
+    const client = build({
+      EMBED_QUERY_TIMEOUT_MS: 1234,
+      EMBED_TIMEOUT_MS: 98765,
+    });
+
+    await client.embed(['q'], true);
+    await client.embed(['d'], false);
+
+    expect(timeoutSpy.mock.calls.map((c) => c[0])).toEqual([1234, 98765]);
+    timeoutSpy.mockRestore();
   });
 
   it.each([422, 400, 401, 413])(

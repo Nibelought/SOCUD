@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { chunkHtml } from '../pipeline/chunker';
-import { EMBED_BATCH_SIZE, EmbeddingClient } from './embedding.client';
+import { EmbeddingClient } from './embedding.client';
 import type { EmbedDocumentJobData } from './queue.constants';
 
 export type EmbedDocumentResult =
@@ -59,8 +59,9 @@ export class EmbedDocumentHandler {
     `;
 
     let embedded = 0;
-    for (let i = 0; i < pending.length; i += EMBED_BATCH_SIZE) {
-      const batch = pending.slice(i, i + EMBED_BATCH_SIZE);
+    const size = this.embeddings.batchSize;
+    for (let i = 0; i < pending.length; i += size) {
+      const batch = pending.slice(i, i + size);
       const vectors = await this.embeddings.embedBatch(
         batch.map((chunk) => chunk.textContent),
         false,
