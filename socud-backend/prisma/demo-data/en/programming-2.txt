@@ -1,0 +1,306 @@
+=== docker-for-development ===
+title: Docker for development
+---
+<p>Docker packages an application with its runtime and system libraries into an image, and runs that image as an isolated container. For development, every teammate then gets the same database version and the same Node.js or Python runtime, without installing them on the host machine.</p>
+<pre><code class="language-dockerfile">FROM node:22-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+CMD ["npm", "run", "dev"]
+</code></pre>
+<p>Pin the base image to a specific version. Copy the dependency manifests before the source code, so that Docker can reuse the cached dependency layer when only your code changes. Use named volumes for database data, because container filesystems are discarded when a container is removed.</p>
+=== code-review-practice ===
+title: Code review practice checklist
+---
+<p>A good review is about risk and clarity. The author explains the intent of the change, and the reviewer answers within one working day.</p>
+<ul>
+<li>Does the change do what the description says, and nothing else?</li>
+<li>Can a new teammate follow the names and the control flow without asking?</li>
+<li>Are error paths handled, including empty input, timeouts and partial failures?</li>
+<li>Do the tests fail without the change and pass with it?</li>
+<li>Does the change log personal data, expose a secret or add an unbounded query?</li>
+</ul>
+<p>Keep pull requests under about 400 changed lines, and split refactoring from behavior changes so each diff can be read on its own. Comment on the code, not the person, and say why when you disagree with a suggestion.</p>
+=== ci-cd-pipelines ===
+title: CI/CD pipelines in practice
+parent: docker-for-development
+---
+<p>Continuous integration means that every push is built and tested automatically, so problems appear minutes after they are introduced. Continuous delivery goes one step further: every change that passes the checks produces an artifact that could be deployed at any time, so deployment becomes a routine action rather than an event.</p>
+<h2>Stages of a typical pipeline</h2>
+<p>A pipeline is a sequence of jobs, and each job starts from a clean environment, so it must install its own dependencies. A common order is install, lint, unit tests, build, integration tests, package and deploy to staging. Put the fastest checks first, so that a formatting error fails in seconds instead of after a twenty minute test run.</p>
+<h2>A minimal workflow</h2>
+<p>The following GitHub Actions workflow runs on every pull request and on pushes to main. It caches npm downloads, runs the linter and the tests, and fails the whole run when any step fails.</p>
+<pre><code class="language-yaml">name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+</code></pre>
+<p>The install step uses npm ci instead of npm install. It installs exactly the versions in the lock file and fails when the lock file is out of date, which is what you want on a build server.</p>
+<h2>Keeping pipelines healthy</h2>
+<p>Flaky tests are the most expensive problem. A test that fails one run in ten teaches people to click retry without reading the log, and then real failures get ignored as well. Quarantine flaky tests quickly, fix them, and track how long the quarantine lasts.</p>
+<p>Review pipeline configuration with the same care as application code, because a small change to a workflow can leak secrets or silently skip checks. The guidance in <a href="{{doc:code-review-practice}}">code review practice checklist</a> applies here too.</p>
+<p>Never print secrets in logs and never commit them. Store them in the secret store of your CI provider, and expose them as environment variables only to the steps that need them. Slow pipelines deserve the same attention: cache dependencies, run independent jobs in parallel, and skip the full end-to-end suite when a smaller one covers the change.</p>
+=== logging-and-observability ===
+title: Logging and observability for services
+parent: docker-for-development
+---
+<p>Logs record what happened, metrics record how often and how long, and traces follow one request across services. Together they let you answer questions about a running system that you did not anticipate when you wrote the code.</p>
+<h2>Write structured logs</h2>
+<p>Plain text lines are easy to read and hard to query. Emit one JSON object per line, with a stable set of fields: time, level, message, service name, request ID and the business identifiers that matter, such as an order ID. Then a log platform can filter every event for one order in a single query.</p>
+<pre><code class="language-typescript">type Level = "debug" | "info" | "warn" | "error";
+
+export function log(level: Level, message: string, fields: Record&lt;string, unknown&gt; = {}): void {
+  const entry = {
+    time: new Date().toISOString(),
+    service: "orders-api",
+    level,
+    message,
+    ...fields,
+  };
+  process.stdout.write(JSON.stringify(entry) + "\n");
+}
+
+log("info", "order created", { orderId: "A-1042", durationMs: 38 });
+</code></pre>
+<p>Use levels consistently. Debug is for developers and is usually switched off in production. Info records normal business events. Warn means something unexpected happened but the request still succeeded. Error means a request or job failed and someone may need to act on it.</p>
+<h2>Correlation and context</h2>
+<p>Generate a request ID at the edge of the system, pass it in a header to every downstream service, and attach it to every log line. Without it, you cannot connect the log lines of the payment service to the request that the API gateway received a moment earlier.</p>
+<p>Never log passwords, tokens, full card numbers or raw personal data. Mask or drop these fields before the entry is written, because logs are copied to many systems and kept for a long time.</p>
+<h2>Metrics and traces</h2>
+<p>Count events and measure durations with a metrics library. Request rate, error rate and latency percentiles make a good first dashboard for any service. Watch the 95th or 99th percentile, because an average hides the slow requests that users actually notice.</p>
+<p>Distributed tracing, for example with OpenTelemetry, records each step of a request as a span with a start time and a duration. A trace shows at a glance which call was slow, and whether the time went to a database query or to a remote service.</p>
+=== unit-vs-integration-testing ===
+title: Unit tests and integration tests, and where each belongs
+parent: ci-cd-pipelines
+---
+<p>Automated tests come in layers, and the two layers most teams use every day are unit tests and integration tests. A unit test checks one function or class in isolation. An integration test checks that several real parts work together, such as a service, a database and an HTTP route. Both are useful, but they answer different questions, and they are slow and fragile in different ways. This guide explains what each kind is good for, how to choose between them, and how to keep both reliable in a continuous integration pipeline, which is described in <a href="{{doc:ci-cd-pipelines}}">CI/CD pipelines in practice</a>.</p>
+<h2>What a unit test looks like</h2>
+<p>A unit test is fast, deterministic and self-contained. It does not touch the network, the disk or the real clock, and any collaborator it needs is replaced by a small fake or stub. The goal is to pin down the behavior of one piece of logic, so that a failure points at a single function. Pure logic such as price calculation, parsing, validation and state transitions is the best candidate.</p>
+<pre><code class="language-typescript">import { describe, it, expect } from "vitest";
+import { applyDiscount } from "./pricing";
+
+describe("applyDiscount", () =&gt; {
+  it("reduces the price by the given percentage", () =&gt; {
+    expect(applyDiscount(200, 25)).toBe(150);
+  });
+
+  it("never returns a negative price", () =&gt; {
+    expect(applyDiscount(10, 150)).toBe(0);
+  });
+
+  it("rejects discounts outside the range 0 to 100", () =&gt; {
+    expect(() =&gt; applyDiscount(10, -5)).toThrow("invalid discount");
+  });
+});
+</code></pre>
+<p>Unit tests run in milliseconds, so you can run them on every save. Their weakness is that they say nothing about whether the pieces fit together. A perfectly tested function can still be called with the wrong arguments by its caller, or receive a timestamp in a format that the database rejects.</p>
+<h2>What an integration test looks like</h2>
+<p>An integration test uses real collaborators. A repository test writes a row to a real PostgreSQL instance and reads it back. An API test sends an HTTP request to the running application and checks the status code, the response body and the stored result. These tests are slower, need more setup and fail for many reasons, but a passing integration test gives you more confidence that the feature actually works.</p>
+<p>When an integration test fails, the failure usually points at a seam between two parts of the system rather than at one line. That is useful, but it means you need good logs and a way to reproduce the failure quickly. Keep each test focused on one behavior, even when the setup is expensive.</p>
+<h2>Choosing the right level</h2>
+<p>The testing pyramid recommends many unit tests, fewer integration tests and only a handful of end-to-end tests that drive the full user interface. The pyramid is a guideline, not a law. Code that is mostly glue, such as a controller that reads a request, calls a repository and returns JSON, gains more value from an integration test than from a stack of mocks.</p>
+<p>A practical rule is to ask what could break and which test would catch it most quickly. The following checklist covers most projects.</p>
+<ul>
+<li>Put calculations, parsing and validation under unit tests.</li>
+<li>Put SQL queries, migrations and framework wiring under integration tests.</li>
+<li>Use end-to-end tests only for a few critical user journeys, such as sign-up and checkout.</li>
+<li>Give every bug fix a regression test at the lowest level that reproduces it.</li>
+</ul>
+<h2>Common mistakes</h2>
+<p>The most common mistake is mocking everything. When every collaborator is a mock, the test mainly checks that the code calls the mock the way you wrote it, and it passes while production fails. A real database driver may return dates as strings in one version and as objects in another, and a mock will never tell you that.</p>
+<p>The second mistake is testing implementation details. A test that asserts a private method was called in a particular order breaks on every refactoring, even when the behavior is unchanged. Assert on observable results instead: return values, stored rows, emitted events and responses.</p>
+<p>The third mistake is shared state. If one test creates a user and another test assumes the table is empty, the suite passes in one order and fails in another. Each test should create the data it needs, and clean up after itself or run inside a transaction that is rolled back.</p>
+<h2>Running integration tests reliably</h2>
+<p>Use the same database engine in tests as in production. An in-memory SQLite database is fast, but it accepts types and constraints that PostgreSQL rejects, so tests pass and deployments fail. Start the database in a container with Docker Compose or Testcontainers, wait until it accepts connections, run the migrations, and then run the suite.</p>
+<p>Make tests deterministic. Inject the clock instead of reading the system time directly, fix random seeds, and sort results before comparing lists when the order is not part of the contract. A test that fails once in fifty runs is a test that nobody trusts.</p>
+<p>Run the integration suite on every pull request, next to the unit tests, so that a failure shows up in the same place. Results that live on a separate dashboard tend to be ignored.</p>
+=== design-patterns-observer-strategy ===
+title: Observer and strategy patterns in practice
+---
+<p>Design patterns are named solutions to problems that keep coming back. Their names matter because they give a team a shared vocabulary, so a reviewer can say "this should be a strategy" and everyone knows what that means. Their danger is that they are often applied before the problem exists. This note covers two patterns that appear in almost every codebase, observer and strategy, and argues that you should reach for them only when a specific signal appears.</p>
+<h2>The signal that a pattern is needed</h2>
+<p>Ask whether a change to one requirement forces edits in many unrelated places. If adding a new shipping method means touching the checkout, the invoice, the email template and the admin screen, the code is telling you that one decision is being repeated. A pattern is a way to put that decision in one place. If nothing changes often, a plain function is still the best design.</p>
+<h2>Strategy: choose an algorithm at runtime</h2>
+<p>The strategy pattern puts each variant of an algorithm behind the same interface and lets the caller pick one. The context object does not need to know which variant it holds, because it only calls the common method. The example below calculates shipping cost for a checkout. Adding a new carrier means writing one more object, not changing the checkout code.</p>
+<pre><code class="language-typescript">interface ShippingStrategy {
+  name: string;
+  cost(weightKg: number): number;
+}
+
+const standard: ShippingStrategy = {
+  name: "standard",
+  cost: (weightKg) =&gt; 4.5 + weightKg * 0.8,
+};
+
+const express: ShippingStrategy = {
+  name: "express",
+  cost: (weightKg) =&gt; 12 + weightKg * 1.6,
+};
+
+class Checkout {
+  constructor(private shipping: ShippingStrategy) {}
+
+  setShipping(strategy: ShippingStrategy): void {
+    this.shipping = strategy;
+  }
+
+  total(itemsTotal: number, weightKg: number): number {
+    return itemsTotal + this.shipping.cost(weightKg);
+  }
+}
+
+const checkout = new Checkout(standard);
+console.log(checkout.total(59.99, 2.5)); // 66.49
+checkout.setShipping(express);
+console.log(checkout.total(59.99, 2.5)); // 75.99
+</code></pre>
+<p>Use the pattern when several variants exist and the choice depends on configuration or on the caller. Do not use it for two branches that rarely change, because an if statement is easier to read and to review.</p>
+<h2>Observer: announce events to interested parties</h2>
+<p>In the observer pattern, a subject keeps a list of observers and notifies each of them when something happens. The subject does not need to know what the observers do, and observers can be added or removed without touching the subject. GUI toolkits, the DOM event system and the Node.js EventEmitter are all built on this idea, so you probably already use it.</p>
+<pre><code class="language-typescript">type Handler&lt;T&gt; = (payload: T) =&gt; void;
+
+class EventBus {
+  private handlers = new Map&lt;string, Set&lt;Handler&lt;unknown&gt;&gt;&gt;();
+
+  subscribe&lt;T&gt;(event: string, handler: Handler&lt;T&gt;): () =&gt; void {
+    const set = this.handlers.get(event) ?? new Set&lt;Handler&lt;unknown&gt;&gt;();
+    set.add(handler as Handler&lt;unknown&gt;);
+    this.handlers.set(event, set);
+    return () =&gt; {
+      set.delete(handler as Handler&lt;unknown&gt;);
+    };
+  }
+
+  publish&lt;T&gt;(event: string, payload: T): void {
+    for (const handler of this.handlers.get(event) ?? []) {
+      try {
+        handler(payload);
+      } catch (err) {
+        console.error("handler for " + event + " failed", err);
+      }
+    }
+  }
+}
+
+const bus = new EventBus();
+const unsubscribe = bus.subscribe&lt;{ orderId: string }&gt;("order.paid", (e) =&gt; {
+  console.log("shipping order " + e.orderId);
+});
+
+bus.publish("order.paid", { orderId: "A-1042" });
+unsubscribe();
+</code></pre>
+<p>Observers need discipline. Every subscription must have a way to unsubscribe, or the subject keeps references to objects that should have been freed. The order in which observers run is not guaranteed, so do not depend on it. Catch errors inside each handler so that one broken observer does not stop the others, and keep handlers fast by pushing slow work onto a queue.</p>
+<p>The price of the pattern is that the flow becomes implicit. When a payment is marked as paid, a reader cannot see who reacts to it without searching for subscribers. Name events carefully, document the important ones, and log the event name together with the handler that ran.</p>
+<h2>Testing code that uses these patterns</h2>
+<p>Both patterns make testing easier, because the collaborators are passed in rather than created inside the class. For the strategy, pass a fake that returns a fixed value and assert that the checkout uses it. For the observer, publish an event in the test and assert that the handler received the expected payload, then unsubscribe and assert that nothing is called afterwards. Write these as unit tests, following the principles in <a href="{{doc:unit-vs-integration-testing}}">unit tests and integration tests</a>.</p>
+<h2>Combining the patterns, and knowing when to stop</h2>
+<p>The two patterns often work together. An observer can notify a component that the configuration changed, and the component can then select a different strategy. That combination is useful, but it is also a sign that the design is getting complicated. Before adding a pattern, write the simplest version and see whether the change you are worried about actually happens.</p>
+<p>Many languages and frameworks already provide observers in their standard libraries, and sorting functions are themselves strategies, since they accept a comparison function. Reuse these mechanisms before inventing your own. A small team that understands plain functions and events will ship more reliable software than a team that wraps every idea in a textbook diagram.</p>
+=== caching-with-redis ===
+title: Caching with Redis
+---
+<p>A cache keeps the result of an expensive operation somewhere fast, so that repeated requests can skip the slow path. Redis is an in-memory data store that many teams use as a shared cache, because every application instance sees the same entries and each entry can expire automatically. Memory is limited, so cache data that is read often and changes rarely.</p>
+<h2>The cache-aside pattern</h2>
+<p>The most common approach is cache-aside. The application looks in the cache first. On a miss, it loads the value from the database, stores it in Redis with a time-to-live, and returns it. The database stays the source of truth.</p>
+<pre><code class="language-typescript">import Redis from "ioredis";
+import { loadProductFromDb, type Product } from "./products";
+
+const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+
+export async function getProduct(id: string): Promise&lt;Product&gt; {
+  const key = "product:" + id;
+
+  const cached = await redis.get(key);
+  if (cached !== null) {
+    return JSON.parse(cached) as Product;
+  }
+
+  // Cache miss: read from the database and keep the copy for five minutes.
+  const product = await loadProductFromDb(id);
+  await redis.set(key, JSON.stringify(product), "EX", 300);
+  return product;
+}
+</code></pre>
+<h2>Choosing a time-to-live</h2>
+<p>A time-to-live, or TTL, limits how stale a cached value can become. Choose it by answering one question: how wrong is it acceptable to be? A product price might live for one minute, while a list of countries can safely live for a day. Set a TTL on every key, because keys without one pile up until they fill the memory Redis is allowed to use.</p>
+<h2>Invalidation on writes</h2>
+<p>When the underlying data changes, the cached copy must change too. Deleting the key is usually safer than writing the new value into it, because two concurrent writers can store an older value after a newer one, and the cache then stays stale until the TTL expires.</p>
+<h2>Operational risks</h2>
+<p>A cache stampede happens when a popular key expires and many requests miss at the same moment, all querying the database. Reduce the risk with a short lock created with SET and the NX and EX options, so that only one request rebuilds the value.</p>
+<p>Redis enforces a memory limit set by maxmemory, and the maxmemory-policy setting decides what happens when it is reached. The default, noeviction, makes writes fail. For a pure cache, allkeys-lru is usually better, because Redis then evicts the least recently used keys instead of rejecting new writes.</p>
+<p>Watch the hit ratio, which INFO reports as keyspace_hits and keyspace_misses, and send it to the same dashboards as your other service metrics, as described in <a href="{{doc:logging-and-observability}}">logging and observability</a>.</p>
+=== postgres-pgvector-semantic-search ===
+title: Semantic search with PostgreSQL and pgvector
+---
+<p>Keyword search finds documents that contain the words you typed. Semantic search finds documents that mean what you asked, even when the wording is different. The usual approach is to convert each text into an embedding, a list of floating point numbers produced by a model, and then to find the stored vectors closest to the query vector. The pgvector extension adds a vector data type, distance operators and approximate indexes to PostgreSQL, so you can keep documents, metadata and embeddings in one database instead of running a separate vector store.</p>
+<h2>Installing the extension and creating a table</h2>
+<p>pgvector must be installed on the database server, and most managed PostgreSQL services offer it as an extension. Enable it once per database and create a table with a vector column. The number of dimensions must match the output of your embedding model, for example 1536 for several common models. Store the model name in its own column, because changing models later means re-embedding every row.</p>
+<pre><code class="language-sql">CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE documents (
+  id          bigserial PRIMARY KEY,
+  title       text NOT NULL,
+  body        text NOT NULL,
+  model       text NOT NULL,
+  embedding   vector(1536) NOT NULL
+);
+
+CREATE INDEX documents_embedding_idx
+  ON documents USING hnsw (embedding vector_cosine_ops);
+</code></pre>
+<h2>Storing and querying embeddings</h2>
+<p>The cosine distance operator suits most text embeddings, because it compares direction and ignores length. Sort by distance and take the first rows with LIMIT. The index can serve the query only when ORDER BY uses the operator the index was built for.</p>
+<p>The following query returns the ten most similar documents. The similarity score is one minus the cosine distance, so higher values are better.</p>
+<pre><code class="language-sql">SELECT id, title, 1 - (embedding &lt;=&gt; $1::vector) AS similarity
+FROM documents
+ORDER BY embedding &lt;=&gt; $1::vector
+LIMIT 10;
+</code></pre>
+<p>From application code, pass the vector as a bracketed text literal. This example uses the node-postgres driver.</p>
+<pre><code class="language-typescript">import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export async function searchDocuments(queryVector: number[], limit = 10) {
+  // pgvector accepts a text literal such as [0.12,-0.03,...] for a vector.
+  const literal = "[" + queryVector.join(",") + "]";
+  const { rows } = await pool.query(
+    "SELECT id, title, 1 - (embedding &lt;=&gt; $1::vector) AS similarity " +
+      "FROM documents ORDER BY embedding &lt;=&gt; $1::vector LIMIT $2",
+    [literal, limit]
+  );
+  return rows;
+}
+</code></pre>
+<p>Batch the embedding calls when you index many documents, because one request for a hundred texts is much faster than a hundred separate requests. Frequent search queries are good candidates for a cache, as described in <a href="{{doc:caching-with-redis}}">caching with Redis</a>.</p>
+<h2>Choosing an index</h2>
+<p>Without an index, PostgreSQL computes the distance to every row and sorts the result. That is exact and fine for a few thousand rows, and it makes a useful baseline. For larger tables, use an approximate index. HNSW gives fast queries and good recall, at the cost of more memory and slower builds. IVFFlat builds faster and uses less memory, but it should be created after the data is loaded, and its recall depends on the probes setting.</p>
+<p>Approximate means that some true neighbors can be missed. Raise hnsw.ef_search for a query when recall matters more than latency, and measure both with EXPLAIN ANALYZE on data shaped like production.</p>
+<p>Filters need care. A WHERE clause on another column, such as a tenant ID, can make the planner skip the index, and an approximate search can return fewer rows than the LIMIT asks for. Check the query plan for every filtered search you add.</p>
+<h2>Troubleshooting</h2>
+<p>Most problems fall into four groups. Check them in this order, because the first one is the cheapest to verify.</p>
+<ul>
+<li><strong>Dimension mismatch.</strong> An error that reports 1536 expected and 768 received means the model changed. Vectors of different sizes cannot be compared, so re-embed the whole table or store the new vectors in a separate column.</li>
+<li><strong>Slow queries.</strong> Run EXPLAIN ANALYZE. If the plan shows a sequential scan, check that ORDER BY uses the same operator as the index and that the query does not wrap the embedding column in a function.</li>
+<li><strong>Poor results.</strong> Confirm that documents and queries were embedded with the same model and preprocessing. Long documents embedded as a single vector lose detail, so split them into chunks of a few hundred words.</li>
+<li><strong>Index build runs out of memory.</strong> Raise maintenance_work_mem for the session that creates the index, then reset it. Building an HNSW index on a large table needs a lot of memory.</li>
+</ul>
+<h2>Operating it in production</h2>
+<p>Storage is the first surprise. A 1536-dimension vector stored as four byte floats takes about 6 KB, so a million documents need roughly 6 GB for the vectors alone, before the index and the rest of each row. Plan disk and memory with that number in mind, and do not select the embedding column in queries that do not need it.</p>
+<p>Combine semantic and keyword search when users type product codes, names or other exact tokens. Full text search and vector similarity can be merged with reciprocal rank fusion, a simple method that adds up the reciprocal of each result's rank in both lists. The hybrid ranking is often better than either method alone.</p>
+<p>Finally, back up the embeddings together with the source text and the model name. Recomputing them costs time and money, and mixing vectors from two models in one index will quietly return worse results after an upgrade.</p>

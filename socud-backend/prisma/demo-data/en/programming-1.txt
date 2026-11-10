@@ -1,0 +1,336 @@
+=== python-idioms ===
+title: Idiomatic Python: a short opinionated note
+---
+<p>Idiomatic Python is less about clever tricks and more about letting the language express intent. Three habits pay off almost everywhere.</p>
+<p>First, prefer <code>enumerate</code> and <code>zip</code> over manual index arithmetic. Second, use <code>with</code> blocks so that files and locks are released even when an exception is raised. Third, unpack values instead of indexing into them:</p>
+<pre><code class="language-python">for index, name in enumerate(["ada", "grace", "linus"]):
+    print(index, name)
+
+first, *rest = [1, 2, 3, 4]  # first == 1, rest == [2, 3, 4]
+</code></pre>
+<p>Keep comprehensions short. If a comprehension needs a second line to read, a plain loop is usually the better choice.</p>
+=== git-branching-workflows ===
+title: Git branching workflows: a checklist
+---
+<p>Pick a branching model that matches how often you release. This checklist suits most teams that ship from one main line.</p>
+<ul>
+<li>Keep main always deployable. Merge only reviewed, passing changes into it.</li>
+<li>Branch from the latest main into short-lived branches named after the work, such as <code>feature/invoice-export</code>.</li>
+<li>Rebase your private branch onto main before review, so the history stays linear and easy to read.</li>
+<li>Delete the branch once it is merged. Stale branches hide real work.</li>
+</ul>
+<p>Check who has pulled a shared branch before you force-push it. <code>git push --force-with-lease</code> refuses to overwrite commits you have not seen, so prefer it to <code>--force</code>.</p>
+=== typescript-type-system ===
+title: The TypeScript type system: a reference
+---
+<h2>Structural typing</h2>
+<p>TypeScript decides whether two types are compatible by their shape rather than by their declared names. An object satisfies a type when it has at least the required properties with compatible types. Extra properties are allowed when the value comes from a variable, which is why a value can fit a type it was never declared as.</p>
+<pre><code class="language-ts">interface Point {
+  x: number;
+  y: number;
+}
+
+const origin = { x: 0, y: 0, label: "origin" };
+const p: Point = origin; // allowed: the extra label property is ignored
+
+// Object literals get excess property checks, so this line is an error:
+// const q: Point = { x: 1, y: 2, label: "q" };
+</code></pre>
+<h2>Unions and narrowing</h2>
+<p>A union type describes a value that may be one of several types. The compiler narrows the type inside each branch of a check such as <code>typeof</code>, <code>in</code>, or an equality comparison. Discriminated unions, where every member carries a literal tag, are the most reliable pattern, because a <code>switch</code> on the tag narrows the rest of the object automatically.</p>
+<pre><code class="language-ts">type Result =
+  | { status: "ok"; value: number }
+  | { status: "error"; message: string };
+
+function describe(result: Result): string {
+  switch (result.status) {
+    case "ok":
+      return "value is " + result.value;
+    case "error":
+      return "failed: " + result.message;
+  }
+}
+</code></pre>
+<h2>Generics</h2>
+<p>Generics let one function or type work over many types while preserving the relationship between its inputs and outputs. A constraint written with <code>extends</code> restricts which types are allowed, so the body can rely on the properties it needs. Type parameters are erased at compile time and cost nothing at run time.</p>
+<pre><code class="language-ts">function firstOf&lt;T extends { id: string }&gt;(items: T[]): T | undefined {
+  return items[0];
+}
+</code></pre>
+<h2>Utility types and unknown</h2>
+<p>The standard library includes mapped types that derive new types from existing ones: <code>Partial&lt;T&gt;</code> makes every property optional, <code>Pick&lt;T, K&gt;</code> keeps only the keys in K, and <code>Record&lt;K, V&gt;</code> builds an object type from a key union.</p>
+<p>Avoid <code>any</code>, which switches off checking, and prefer <code>unknown</code> for data of uncertain shape, because the compiler then forces you to narrow it before use.</p>
+=== go-goroutines-channels ===
+title: Goroutines and channels in Go: a tutorial
+---
+<p>Go runs concurrent work with goroutines, which are lightweight functions scheduled by the Go runtime onto a small pool of operating system threads. Starting one is cheap, so running thousands is normal. Put the keyword <code>go</code> in front of a function call to start a goroutine.</p>
+<h2>Starting goroutines and waiting for them</h2>
+<p>A goroutine does not block its caller, so the program can exit before the work finishes. A <code>sync.WaitGroup</code> counts outstanding goroutines and lets the caller wait for them. The lines below may print in any order.</p>
+<pre><code class="language-go">package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func main() {
+	var wg sync.WaitGroup
+	for i := 1; i &lt;= 3; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			fmt.Println("worker", n, "finished")
+		}(i)
+	}
+	wg.Wait()
+}
+</code></pre>
+<h2>Channels for communication</h2>
+<p>A channel carries values between goroutines. An unbuffered channel synchronizes both ends: a send waits for a receiver, and a receive waits for a value. A buffered channel lets senders continue until its capacity is full.</p>
+<pre><code class="language-go">results := make(chan string)
+
+go func() {
+	results &lt;- "parsed config" // blocks until main receives
+}()
+
+msg := &lt;-results // blocks until a value arrives
+fmt.Println(msg)
+</code></pre>
+<h2>Closing channels and ranging over them</h2>
+<p>The sender closes a channel when no more values will arrive, and a receiver can then use <code>for range</code> to read until the channel is drained. Only the sender should close a channel, and closing a channel twice causes a panic.</p>
+<h2>Common pitfalls</h2>
+<p>The most common mistake is leaking goroutines. A goroutine blocked on a send that nobody receives stays alive forever. Pass a <code>context.Context</code> into long-running work so it can stop when its consumer goes away.</p>
+<p>A similar concern appears in single-threaded runtimes, where a task that never yields stalls everything else. Compare it with <a href="{{doc:async-await-event-loop}}">async/await and the event loop</a>.</p>
+=== rest-api-design ===
+title: REST API design: a practical checklist
+---
+<p>A REST API models a system as resources, each identified by a URL and manipulated with standard HTTP methods. Good design makes the API predictable, so a client can guess how an endpoint behaves before reading the documentation. Use the notes below as a checklist when reviewing a new endpoint.</p>
+<h2>Resources and URLs</h2>
+<ul>
+<li>Name resources with plural nouns, such as <code>/invoices</code> and <code>/invoices/42/lines</code>. Leave verbs out of paths, because the HTTP method already carries the action.</li>
+<li>Keep nesting to two levels at most. Deeper relationships are easier to express with a query filter.</li>
+<li>Use lowercase letters and hyphens in multi-word segments, for example <code>/payment-methods</code>.</li>
+</ul>
+<h2>Methods and status codes</h2>
+<p>Use GET for reads without side effects, POST to create, PUT or PATCH to update, and DELETE to remove. GET, PUT, and DELETE are idempotent, so a client can retry them safely after a timeout. Return 201 with a Location header when a resource is created, 204 for a successful delete with no body, and 404 when the resource does not exist.</p>
+<h2>Errors, filtering and pagination</h2>
+<ul>
+<li>Return errors in one consistent JSON shape, with a machine-readable code and a human-readable message. Use 400 for malformed requests, 422 for validation failures, and 409 for conflicts such as a duplicate key.</li>
+<li>Paginate every collection. Cursor-based pagination stays stable when rows are inserted during a read, while offset pagination can skip or repeat items.</li>
+<li>Put filtering and sorting in query parameters, for example <code>?status=open&amp;sort=-created_at</code>.</li>
+</ul>
+<h2>Versioning and compatibility</h2>
+<p>Prefer additive changes. New optional fields and new endpoints are safe for existing clients, while renaming or removing a field breaks them. When a break is unavoidable, publish a new version, keep the old one running until its clients have moved, and state the retirement date in the documentation.</p>
+<p>Slow list endpoints are often a database problem first. For the indexing side, read <a href="{{doc:sql-indexes-query-plans}}">SQL indexes and query plans</a>.</p>
+=== rust-ownership-borrowing ===
+title: Rust ownership and borrowing: a troubleshooting guide
+---
+<p>Rust checks its ownership rules at compile time. The rules themselves are small, and the difficulty comes from applying them to real data structures. This guide starts with the rules and then works through the errors you are most likely to meet.</p>
+<h2>Ownership in one paragraph</h2>
+<p>Every value in Rust has exactly one owner, which is the binding that holds it. When the owner goes out of scope, the value is dropped and its memory is released. Ownership can move to another binding or into a function call. After a move, the original binding can no longer be used, and the compiler refuses to build any code that tries.</p>
+<pre><code class="language-rust">fn main() {
+    let name = String::from("ferris");
+    let owner = name; // ownership moves from name to owner
+    // println!("{}", name); // error: borrow of moved value
+    println!("{}", owner);
+} // owner goes out of scope here, and the String is freed
+</code></pre>
+<h2>Moves, copies, and clones</h2>
+<p>Small fixed-size types such as integers, floats, booleans, and characters implement the Copy trait, so assigning them duplicates the value and leaves the original usable. Types that own heap memory, such as String and Vec, move by default. If two independent owners are truly needed, call clone, which performs a deep copy and can be expensive for large data.</p>
+<p>Passing a value to a function follows the same rule: the function takes ownership unless the parameter is a reference. That is the reason borrowing exists.</p>
+<h2>Borrowing: shared and mutable references</h2>
+<p>A reference lets code use a value without taking ownership. An immutable reference, written with an ampersand, is shared, and any number of them can exist at once. A mutable reference, written with an ampersand followed by mut, is exclusive: while it is alive, no other reference to the same value may exist. Together these rules prevent data races at compile time.</p>
+<pre><code class="language-rust">fn longest(words: &amp;[String]) -&gt; usize {
+    words.iter().map(|w| w.len()).max().unwrap_or(0)
+}
+
+fn add_exclaim(text: &amp;mut String) {
+    text.push('!');
+}
+
+fn main() {
+    let mut greeting = String::from("hello");
+    let words = vec![String::from("hi"), String::from("there")];
+    println!("{}", longest(&amp;words));
+    add_exclaim(&amp;mut greeting);
+    println!("{}", greeting);
+}
+</code></pre>
+<p>The borrow checker tracks how long a reference is actually used, not merely where it is declared. This is known as non-lexical lifetimes.</p>
+<h2>Troubleshooting common borrow checker errors</h2>
+<p>Most errors in this area fall into a few families. Each section below pairs a message with its usual cause and a fix.</p>
+<h3>Use of moved value</h3>
+<p>This error appears when you use a variable after its value has moved into another binding or a function call. Pass a reference instead, clone if the two copies really must be independent, or have the function return the value it consumed.</p>
+<h3>Cannot borrow as mutable because it is also borrowed as immutable</h3>
+<p>A shared reference is still alive while you try to mutate the same collection. The reference may come from an index, an iterator, or a method that returns a borrowed value. Shorten the shared borrow so it ends before the mutation, or copy out the data you need first.</p>
+<pre><code class="language-rust">fn main() {
+    let mut scores = vec![10, 20, 30];
+
+    // Error: first keeps scores borrowed while push runs.
+    // let first = &amp;scores[0];
+    // scores.push(40);
+    // println!("{}", first);
+
+    // Fix: copy the value out, so the borrow ends immediately.
+    let first = scores[0];
+    scores.push(40);
+    println!("{}", first);
+}
+</code></pre>
+<h3>Returning a reference to a local value</h3>
+<p>A function cannot return a reference to something it created, because that value is dropped when the function returns. Returning <code>&amp;str</code> from a function that builds its string locally will not compile. Return the owned <code>String</code> instead, or borrow data the caller already owns and pass it in.</p>
+<h3>Closures that outlive their data</h3>
+<p>A closure that captures a reference cannot outlive that reference, so it cannot be returned or handed to a thread carelessly. Add move to transfer ownership into the closure, or wrap shared read-only data in Arc.</p>
+<h2>When to clone, and when not to</h2>
+<p>Cloning is a deliberate statement that two owners need separate data. Clone freely while the ownership design is still changing, and measure before optimizing. In hot loops, prefer borrowing.</p>
+<ul>
+<li>Clone at API boundaries when it keeps signatures simple and the cost is small.</li>
+<li>Borrow inside a single function, where the lifetime is obvious to both you and the compiler.</li>
+<li>Store owned data in structs. Storing references inside a struct adds lifetime parameters that spread through the codebase.</li>
+</ul>
+<h2>Summary</h2>
+<p>Own data where it is created, lend it out through references for the duration of a call, and clone only when two owners really need their own copies. When the compiler complains, first ask which binding is supposed to own the value. Most errors disappear once that question has a clear answer.</p>
+=== sql-indexes-query-plans ===
+title: SQL indexes and query plans
+parent: rest-api-design
+---
+<p>An index is a separate data structure that lets the database find rows without reading the whole table. Indexes speed up reads, but they cost storage, and every insert, update, and delete must maintain each index. Choosing them well starts with reading query plans rather than guessing. The examples below use PostgreSQL syntax.</p>
+<h2>How a B-tree index helps</h2>
+<p>Most relational databases default to B-tree indexes. A B-tree keeps keys in sorted order across many small pages, so the engine can find one key in a handful of page reads and can scan a range of keys in order. Equality lookups, range filters, and ORDER BY on the indexed columns all benefit. PostgreSQL also offers hash, GIN, GiST, and BRIN indexes for specialized cases.</p>
+<pre><code class="language-sql">CREATE TABLE orders (
+    id          BIGSERIAL PRIMARY KEY,
+    customer_id BIGINT NOT NULL,
+    status      TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    total_cents INTEGER NOT NULL
+);
+
+-- Index the columns used in the WHERE clause and the sort order.
+CREATE INDEX idx_orders_customer_created
+    ON orders (customer_id, created_at);
+</code></pre>
+<h2>Reading an EXPLAIN plan</h2>
+<p>EXPLAIN shows the plan the optimizer has chosen. EXPLAIN ANALYZE also runs the query and reports actual timings and row counts. Compare the estimated rows with the actual rows. A large gap usually means the table statistics are stale, and running ANALYZE on the table refreshes them.</p>
+<pre><code class="language-sql">EXPLAIN ANALYZE
+SELECT id, total_cents
+FROM orders
+WHERE customer_id = 42
+  AND created_at &gt;= now() - INTERVAL '30 days'
+ORDER BY created_at DESC
+LIMIT 20;
+</code></pre>
+<p>With the composite index in place, the output looks roughly like this, trimmed for space:</p>
+<pre><code>Limit  (cost=0.43..8.71 rows=20 width=16) (actual time=0.031..0.054 rows=20 loops=1)
+  -&gt;  Index Scan Backward using idx_orders_customer_created on orders  (cost=0.43..120.11 rows=290 width=16) (actual time=0.030..0.050 rows=20 loops=1)
+        Index Cond: ((customer_id = 42) AND (created_at &gt;= (now() - '30 days'::interval)))
+Planning Time: 0.210 ms
+Execution Time: 0.079 ms
+</code></pre>
+<h2>Composite indexes and column order</h2>
+<p>A composite index is sorted by its first column, then by its second column within equal values of the first. The query above filters on customer_id with equality and on created_at with a range, so customer_id comes first. Putting created_at first would make the engine walk through many index entries that belong to other customers. A useful rule of thumb is to place equality columns first, then the range or sort column.</p>
+<h2>Covering indexes</h2>
+<p>If every column a query needs is stored in the index, the engine can answer it from the index alone and skip the table. PostgreSQL calls this an index-only scan, and the INCLUDE clause adds non-key columns to the index for that purpose.</p>
+<pre><code class="language-sql">CREATE INDEX idx_orders_customer_covering
+    ON orders (customer_id, created_at)
+    INCLUDE (total_cents);
+</code></pre>
+<p>An index-only scan still consults the visibility map, so tables with frequent updates benefit less than read-mostly tables. Regular VACUUM keeps that map current.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li>Wrapping an indexed column in a function, such as <code>WHERE lower(email) = 'user@example.com'</code>, which prevents a plain index on email from being used. Index the expression itself, or store the normalized value.</li>
+<li>Indexing every column. Each index adds write cost and storage, so drop indexes that the plans never use. The statistics views show how often each index is scanned.</li>
+<li>Using a leading wildcard in LIKE, such as <code>LIKE '%abc'</code>, which cannot seek into a B-tree. For substring search, use a trigram index from the pg_trgm extension.</li>
+<li>Trusting an old plan. After a large data change, run ANALYZE so the optimizer's row estimates are current.</li>
+</ul>
+<h2>Pagination and the cost of OFFSET</h2>
+<p>OFFSET makes the database read and discard every skipped row, so deep pages get slower as the offset grows. Keyset pagination filters on the last key the client has seen, and the index can jump straight to the next page. The query below fetches the page of orders older than a known created_at value.</p>
+<pre><code class="language-sql">SELECT id, total_cents, created_at
+FROM orders
+WHERE customer_id = 42
+  AND created_at &lt; $1
+ORDER BY created_at DESC
+LIMIT 20;
+</code></pre>
+<p>When created_at can repeat, add id as a tiebreaker so that no rows are skipped. The planner may also ignore an index when it expects to return a large share of the table, because a sequential scan is cheaper than many random reads. This is one reason many APIs expose cursors instead of page numbers. The design trade-offs are covered in the guide to <a href="{{doc:rest-api-design}}">REST API design</a>.</p>
+=== async-await-event-loop ===
+title: async/await and the event loop
+parent: go-goroutines-channels
+---
+<p>Asynchronous code lets a program wait for slow operations, such as network requests or disk reads, without blocking a thread. Many languages expose this through async and await syntax, but the mechanism underneath is an event loop that runs one piece of code at a time and switches tasks at each await point. Go takes a different route, as covered in <a href="{{doc:go-goroutines-channels}}">goroutines and channels in Go</a>.</p>
+<h2>The event loop in one picture</h2>
+<p>The event loop repeatedly takes the next task from a queue and runs it until the task finishes or reaches an await. A task that awaits hands control back to the loop, which can run other tasks while the operating system completes the I/O in the background. When the I/O is ready, the loop schedules the waiting task to resume.</p>
+<p>In JavaScript, promise callbacks run as microtasks, which are drained before the loop moves on to timers and other callbacks. Because only one task runs at a time, ordinary variables need no locks. The cost is that a long computation inside a task blocks every other task until it returns.</p>
+<h2>Writing async functions</h2>
+<p>An async function returns a promise in JavaScript, or a coroutine in Python, and its body can pause at each await. Calling the function does not run it to completion; awaiting the result does. Consecutive awaits run one after another, so independent operations should be started together.</p>
+<pre><code class="language-js">// fetchOrders, fetchProfile and fetchSettings are written the same way as fetchUser.
+async function fetchUser(id) {
+  const response = await fetch("https://api.example.com/users/" + id);
+  if (!response.ok) {
+    throw new Error("request failed: " + response.status);
+  }
+  return response.json();
+}
+
+async function loadDashboard(userId) {
+  // Sequential: the second request waits for the first to finish.
+  const user = await fetchUser(userId);
+  const orders = await fetchOrders(userId);
+
+  // Concurrent: both requests are in flight at the same time.
+  const [profile, settings] = await Promise.all([
+    fetchProfile(userId),
+    fetchSettings(userId),
+  ]);
+  return { user, orders, profile, settings };
+}
+</code></pre>
+<h2>Python: coroutines with asyncio</h2>
+<p>Python exposes the same model through the asyncio module. You declare coroutines with async def, start the loop with asyncio.run, and combine several awaitables with asyncio.gather, which returns their results in the original order.</p>
+<pre><code class="language-python">import asyncio
+
+async def fetch_price(symbol: str) -&gt; float:
+    await asyncio.sleep(0.5)  # stands in for a network call
+    return 100.0
+
+async def main() -&gt; None:
+    prices = await asyncio.gather(
+        fetch_price("ABC"),
+        fetch_price("XYZ"),
+    )
+    print(prices)
+
+asyncio.run(main())
+</code></pre>
+<h2>Blocking the loop</h2>
+<p>The most common bug is a blocking call inside an async function. A synchronous HTTP client, a time.sleep call, or a long loop over a large array holds the thread, so every other task waits. Replace blocking calls with async equivalents. In Python, use asyncio.to_thread for a blocking library call and a process pool for heavy computation.</p>
+<h2>Errors and cancellation</h2>
+<p>Wrap awaits in try and catch, because a rejected promise throws at the point of the await. For cancellation in JavaScript, pass an AbortSignal to fetch. In Python, cancelling a task raises asyncio.CancelledError at its next await, so cleanup code belongs in a finally block. The JavaScript example below cancels a request that takes longer than two seconds.</p>
+<pre><code class="language-js">async function run() {
+  const controller = new AbortController();
+  setTimeout(() =&gt; controller.abort(), 2000);
+
+  try {
+    const response = await fetch("https://api.example.com/slow", {
+      signal: controller.signal,
+    });
+    console.log(response.status);
+  } catch (error) {
+    if (error.name === "AbortError") {
+      console.log("request cancelled after two seconds");
+    } else {
+      throw error;
+    }
+  }
+}
+
+run();
+</code></pre>
+<h2>Troubleshooting: why nothing runs in parallel</h2>
+<p>If code that looks concurrent is actually sequential, check these causes first.</p>
+<ul>
+<li>An await placed inside a loop, which serializes every iteration. Create the promises or tasks first, then await them together.</li>
+<li>A missing await. In JavaScript the call still starts, but nothing waits for it, so its errors may surface later as unhandled rejections instead of reaching the caller.</li>
+<li>Blocking work on the loop thread, as described above.</li>
+</ul>
+<h2>Summary</h2>
+<p>Think of an async function as a set of steps the event loop can interleave. Await where you genuinely need a result, start independent work before the first await, and keep heavy computation off the loop. The model is the same across languages even when the syntax differs.</p>

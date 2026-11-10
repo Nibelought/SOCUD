@@ -1,0 +1,217 @@
+=== derivatives-integrals ===
+title: Похідні та інтеграли: від швидкості до площі
+---
+<p>Похідна і інтеграл є двома основними поняттями математичного аналізу. Похідна описує, як швидко змінюється функція, а інтеграл дозволяє знайти накопичену величину, наприклад площу фігури під графіком. Ці поняття тісно пов'язані: згідно з основною теоремою аналізу, інтегрування і диференціювання є взаємно оберненими операціями.</p>
+<h2>Похідна як швидкість зміни</h2>
+<p>Нехай функція <span data-type="inlineMath" data-latex="f(x)" data-display="no"></span> задана на деякому проміжку. Похідна в точці <span data-type="inlineMath" data-latex="x" data-display="no"></span> визначається як границя відношення приросту функції до приросту аргументу:</p>
+<p><span data-type="inlineMath" data-latex="f^{\prime}(x)=\lim_{h\to 0}\frac{f(x+h)-f(x)}{h}" data-display="yes"></span></p>
+<p>Геометрично похідна дорівнює кутовому коефіцієнту дотичної до графіка в цій точці. Фізичний зміст теж простий: якщо <span data-type="inlineMath" data-latex="s(t)" data-display="no"></span> — шлях, пройдений тілом за час <span data-type="inlineMath" data-latex="t" data-display="no"></span>, то <span data-type="inlineMath" data-latex="v(t)=s^{\prime}(t)" data-display="no"></span> — миттєва швидкість.</p>
+<h2>Основні правила диференціювання</h2>
+<p>Щоразу обчислювати границю недоцільно, тому користуються таблицею похідних і правилами. Найуживаніші з них:</p>
+<ul>
+<li>степенева функція: <span data-type="inlineMath" data-latex="(x^n)^{\prime}=nx^{n-1}" data-display="no"></span>;</li>
+<li>похідна суми: <span data-type="inlineMath" data-latex="(u+v)^{\prime}=u^{\prime}+v^{\prime}" data-display="no"></span>;</li>
+<li>правило добутку: <span data-type="inlineMath" data-latex="(uv)^{\prime}=u^{\prime}v+uv^{\prime}" data-display="no"></span>;</li>
+<li>правило ланцюга: <span data-type="inlineMath" data-latex="(f(g(x)))^{\prime}=f^{\prime}(g(x))\cdot g^{\prime}(x)" data-display="no"></span>.</li>
+</ul>
+<p>Розглянемо функцію <span data-type="inlineMath" data-latex="f(x)=x^3-3x" data-display="no"></span>. Її похідна <span data-type="inlineMath" data-latex="f^{\prime}(x)=3x^2-3" data-display="no"></span>, а критичні точки знаходимо з рівності <span data-type="inlineMath" data-latex="3x^2-3=0" data-display="no"></span>, тобто <span data-type="inlineMath" data-latex="x=\pm 1" data-display="no"></span>. Друга похідна <span data-type="inlineMath" data-latex="f^{\prime\prime}(x)=6x" data-display="no"></span> від'ємна при <span data-type="inlineMath" data-latex="x=-1" data-display="no"></span>, отже, там максимум, а в точці <span data-type="inlineMath" data-latex="x=1" data-display="no"></span>, де вона додатна, — мінімум.</p>
+<h2>Первісна та невизначений інтеграл</h2>
+<p>Функцію <span data-type="inlineMath" data-latex="F(x)" data-display="no"></span> називають первісною для <span data-type="inlineMath" data-latex="f(x)" data-display="no"></span>, якщо <span data-type="inlineMath" data-latex="F^{\prime}(x)=f(x)" data-display="no"></span>. Оскільки похідна сталої дорівнює нулю, первісна визначена з точністю до сталої, тому невизначений інтеграл записують із доданком <span data-type="inlineMath" data-latex="C" data-display="no"></span>:</p>
+<p><span data-type="inlineMath" data-latex="\int x^n\,dx=\frac{x^{n+1}}{n+1}+C,\quad n\neq -1" data-display="yes"></span></p>
+<p>Перевірка проста: похідна від <span data-type="inlineMath" data-latex="\frac{x^{n+1}}{n+1}+C" data-display="no"></span> дорівнює <span data-type="inlineMath" data-latex="x^n" data-display="no"></span>, отже, відповідь правильна. Так само <span data-type="inlineMath" data-latex="\int \cos x\,dx=\sin x+C" data-display="no"></span>, а <span data-type="inlineMath" data-latex="\int e^x\,dx=e^x+C" data-display="no"></span>.</p>
+<h2>Визначений інтеграл і формула Ньютона–Лейбніца</h2>
+<p>Якщо функція невід'ємна на відрізку <span data-type="inlineMath" data-latex="[a,b]" data-display="no"></span>, то визначений інтеграл від <span data-type="inlineMath" data-latex="a" data-display="no"></span> до <span data-type="inlineMath" data-latex="b" data-display="no"></span> дорівнює площі криволінійної трапеції під графіком. Обчислювати його дозволяє формула Ньютона–Лейбніца:</p>
+<p><span data-type="inlineMath" data-latex="\int_a^b f(x)\,dx=F(b)-F(a)" data-display="yes"></span></p>
+<p>Наприклад, знайдемо площу під параболою <span data-type="inlineMath" data-latex="y=x^2" data-display="no"></span> на відрізку <span data-type="inlineMath" data-latex="[0,1]" data-display="no"></span>:</p>
+<p><span data-type="inlineMath" data-latex="\int_0^1 x^2\,dx=\left[\frac{x^3}{3}\right]_0^1=\frac{1}{3}" data-display="yes"></span></p>
+<h2>Приклади з розв'язаннями</h2>
+<p><strong>Задача 1.</strong> Знайти <span data-type="inlineMath" data-latex="\int (3x^2+2x)\,dx" data-display="no"></span>.</p>
+<p><em>Розв'язання.</em> Інтеграл суми дорівнює сумі інтегралів. Маємо <span data-type="inlineMath" data-latex="\int 3x^2\,dx=x^3+C" data-display="no"></span> і <span data-type="inlineMath" data-latex="\int 2x\,dx=x^2+C" data-display="no"></span>. Отже, відповідь: <span data-type="inlineMath" data-latex="x^3+x^2+C" data-display="no"></span>.</p>
+<p><strong>Задача 2.</strong> Знайти рівняння дотичної до графіка <span data-type="inlineMath" data-latex="y=x^2" data-display="no"></span> у точці з абсцисою <span data-type="inlineMath" data-latex="x=2" data-display="no"></span>.</p>
+<p><em>Розв'язання.</em> Похідна <span data-type="inlineMath" data-latex="y^{\prime}=2x" data-display="no"></span> у точці <span data-type="inlineMath" data-latex="x=2" data-display="no"></span> дорівнює 4, а значення функції там теж дорівнює 4. Рівняння дотичної має вигляд <span data-type="inlineMath" data-latex="y=y(2)+y^{\prime}(2)(x-2)" data-display="no"></span>, тобто <span data-type="inlineMath" data-latex="y=4x-4" data-display="no"></span>.</p>
+<p>Диференціювання і інтегрування — дві сторони однієї монети. Опанувавши таблицю похідних, ви зможете швидко перевіряти будь-який інтеграл, а знаючи правила інтегрування, — розв'язувати задачі про площі, роботу й шлях.</p>
+=== taylor-series ===
+title: Ряди Тейлора: наближення функцій многочленами
+parent: derivatives-integrals
+---
+<p>Ряд Тейлора дозволяє подати гладку функцію у вигляді нескінченного степеневого ряду. Це корисно, коли потрібно обчислювати значення функції наближено або досліджувати її поведінку поблизу однієї точки. Основа методу — похідні функції в цій точці, про які йшлося у статті <a href="{{doc:derivatives-integrals}}">Похідні та інтеграли</a>.</p>
+<h2>Означення</h2>
+<p>Якщо функція <span data-type="inlineMath" data-latex="f(x)" data-display="no"></span> нескінченно диференційовна в точці <span data-type="inlineMath" data-latex="a" data-display="no"></span>, то її ряд Тейлора має вигляд:</p>
+<p><span data-type="inlineMath" data-latex="f(x)=\sum_{n=0}^{\infty}\frac{f^{(n)}(a)}{n!}(x-a)^n" data-display="yes"></span></p>
+<p>Тут <span data-type="inlineMath" data-latex="f^{(n)}(a)" data-display="no"></span> — похідна порядку n у точці a, а <span data-type="inlineMath" data-latex="n!" data-display="no"></span> — факторіал. Якщо a = 0, ряд називають рядом Маклорена.</p>
+<h2>Приклад: експонента</h2>
+<p>Розкладемо <span data-type="inlineMath" data-latex="e^x" data-display="no"></span> в околі нуля. Усі похідні <span data-type="inlineMath" data-latex="e^x" data-display="no"></span> дорівнюють <span data-type="inlineMath" data-latex="e^x" data-display="no"></span>, а в нулі вони дорівнюють 1, тому коефіцієнти ряду мають вигляд <span data-type="inlineMath" data-latex="\frac{1}{n!}" data-display="no"></span>.</p>
+<p><span data-type="inlineMath" data-latex="e^x=\sum_{n=0}^{\infty}\frac{x^n}{n!}=1+x+\frac{x^2}{2!}+\frac{x^3}{3!}+\cdots" data-display="yes"></span></p>
+<p>Візьмемо три перші доданки і підставимо <span data-type="inlineMath" data-latex="x=0{,}1" data-display="no"></span>: <span data-type="inlineMath" data-latex="1+0{,}1+0{,}005=1{,}105" data-display="no"></span>, що добре узгоджується зі значенням <span data-type="inlineMath" data-latex="e^{0{,}1}\approx 1{,}10517" data-display="no"></span>.</p>
+<h2>Збіжність і радіус збіжності</h2>
+<p>Ряд <span data-type="inlineMath" data-latex="1+x+x^2+\cdots" data-display="no"></span> є геометричною прогресією і збігається лише тоді, коли <span data-type="inlineMath" data-latex="|x|\lt 1" data-display="no"></span>. Відстань від точки розкладу до найближчої межі такої області називають радіусом збіжності; для цього ряду він дорівнює 1.</p>
+<h2>Де це застосовують</h2>
+<p>Ряди Тейлора використовують у фізиці й інженерії, коли точний розв'язок знайти важко, а потрібна надійна оцінка. Обмежуючи ряд кількома доданками, отримуємо многочлен, який добре описує функцію поблизу точки розкладу, але гірше працює далеко від неї.</p>
+=== probability-bayes ===
+title: Ймовірність і формула Баєса
+---
+<p>Ймовірність події — це число від 0 до 1, яке показує, наскільки імовірно, що подія відбудеться. За класичним означенням, якщо всі n елементарних наслідків рівноможливі, а сприятливих для події A є m, то:</p>
+<p><span data-type="inlineMath" data-latex="P(A)=\frac{m}{n}" data-display="yes"></span></p>
+<h2>Умовна ймовірність</h2>
+<p>Ймовірність події A за умови, що відбулася подія B, знаходимо так:</p>
+<p><span data-type="inlineMath" data-latex="P(A\mid B)=\frac{P(A\cap B)}{P(B)},\qquad P(B)\neq 0" data-display="yes"></span></p>
+<p>Тобто ділимо ймовірність спільного настання обох подій на ймовірність умови. Наприклад, з колоди з 52 карт навмання витягнули туза. Ймовірність, що це туз пік, дорівнює <span data-type="inlineMath" data-latex="\frac{1}{4}" data-display="no"></span>, бо серед чотирьох тузів лише один пиковий.</p>
+<h2>Формула повної ймовірності і формула Баєса</h2>
+<p>Нехай події H1, H2, ..., Hk утворюють повну групу несумісних гіпотез. Для будь-якої події E справедлива формула повної ймовірності:</p>
+<p><span data-type="inlineMath" data-latex="P(E)=\sum_{i=1}^{k}P(E\mid H_i)\,P(H_i)" data-display="yes"></span></p>
+<p>Звідси випливає формула Баєса, яка дозволяє переглянути ймовірність гіпотези після появи нового свідчення:</p>
+<p><span data-type="inlineMath" data-latex="P(H\mid E)=\frac{P(E\mid H)\,P(H)}{P(E)}" data-display="yes"></span></p>
+<h2>Приклад: медичний тест</h2>
+<p>Нехай хворобу мають 1% населення. Тест дає позитивний результат у 95% хворих і хибно позитивний — у 5% здорових. Яка ймовірність, що людина з позитивним результатом справді хвора?</p>
+<p>Позначимо D — людина хвора, + — тест позитивний. Тоді <span data-type="inlineMath" data-latex="P(D)=0{,}01" data-display="no"></span>, <span data-type="inlineMath" data-latex="P(+\mid D)=0{,}95" data-display="no"></span>, <span data-type="inlineMath" data-latex="P(+\mid \neg D)=0{,}05" data-display="no"></span>. Спочатку знаходимо повну ймовірність позитивного результату:</p>
+<p><span data-type="inlineMath" data-latex="P(+)=0{,}95\cdot 0{,}01+0{,}05\cdot 0{,}99=0{,}059" data-display="yes"></span></p>
+<p>Далі за формулою Баєса:</p>
+<p><span data-type="inlineMath" data-latex="P(D\mid +)=\frac{0{,}95\cdot 0{,}01}{0{,}059}\approx 0{,}161" data-display="yes"></span></p>
+<p>Отже, лише близько 16% людей з позитивним результатом справді хворі. Це типовий і трохи несподіваний висновок: коли захворювання рідкісне, навіть точний тест дає багато хибних тривог.</p>
+=== statistics-variance-normal ===
+title: Статистика: дисперсія та нормальний розподіл
+parent: probability-bayes
+---
+<p>Статистика допомагає описувати великі масиви даних і робити висновки на основі вибірки. Два найважливіші інструменти такого опису — міра центру, тобто середнє, і міра розкиду, тобто дисперсія. Окремо розглянемо нормальний розподіл, який з'являється в багатьох природничих задачах. Для тих, хто вже знайомий з <a href="{{doc:probability-bayes}}">формулою Баєса</a>, цей матеріал стане природним продовженням: ми переходимо від окремих подій до розподілів значень.</p>
+<h2>Середнє арифметичне</h2>
+<p>Для вибірки <span data-type="inlineMath" data-latex="x_1,\dots,x_n" data-display="no"></span> середнє арифметичне обчислюють за формулою:</p>
+<p><span data-type="inlineMath" data-latex="\bar{x}=\frac{1}{n}\sum_{i=1}^{n}x_i" data-display="yes"></span></p>
+<p>Середнє чутливе до викидів: одне дуже велике значення може суттєво його змінити. Тому разом із ним корисно дивитися й на медіану, тобто значення, яке ділить упорядковану вибірку навпіл.</p>
+<h2>Дисперсія і стандартне відхилення</h2>
+<p>Дисперсія показує, наскільки значення в середньому відхиляються від середнього. Її обчислюють як середнє арифметичне квадратів відхилень:</p>
+<p><span data-type="inlineMath" data-latex="\sigma^2=\frac{1}{n}\sum_{i=1}^{n}(x_i-\bar{x})^2" data-display="yes"></span></p>
+<p>Квадрат потрібен, щоб відхилення вгору і вниз не компенсували одне одного. Коли дисперсію оцінюють за вибіркою, у знаменнику пишуть <span data-type="inlineMath" data-latex="n-1" data-display="no"></span> замість <span data-type="inlineMath" data-latex="n" data-display="no"></span>, і тоді маємо вибіркову дисперсію. Стандартне відхилення <span data-type="inlineMath" data-latex="\sigma=\sqrt{\sigma^2}" data-display="no"></span> має ту саму розмірність, що й самі дані, тому його зручніше інтерпретувати.</p>
+<p>Корисна рівність: <span data-type="inlineMath" data-latex="\sigma^2=\overline{x^2}-\bar{x}^2" data-display="no"></span>. Тобто дисперсія дорівнює різниці між середнім квадратів і квадратом середнього.</p>
+<h2>Нормальний розподіл</h2>
+<p>Випадкова величина X має нормальний розподіл з параметрами μ і σ, якщо її щільність імовірності має вигляд:</p>
+<p><span data-type="inlineMath" data-latex="f(x)=\frac{1}{\sigma\sqrt{2\pi}}\,e^{-\frac{(x-\mu)^2}{2\sigma^2}}" data-display="yes"></span></p>
+<p>Графік такої функції має форму симетричного дзвону з максимумом у точці μ. Параметр μ є математичним сподіванням, а σ² — дисперсією. Для стандартизації використовують перетворення <span data-type="inlineMath" data-latex="z=\frac{x-\mu}{\sigma}" data-display="no"></span>, після якого розподіл стає стандартним: з μ = 0 і σ = 1.</p>
+<h2>Правило трьох сигм</h2>
+<p>Для нормального розподілу майже всі значення лежать у межах кількох стандартних відхилень від середнього. Приблизно:</p>
+<ul>
+<li>близько 68% значень лежать у межах <span data-type="inlineMath" data-latex="\mu\pm\sigma" data-display="no"></span>;</li>
+<li>близько 95% — у межах <span data-type="inlineMath" data-latex="\mu\pm 2\sigma" data-display="no"></span>;</li>
+<li>близько 99,7% — у межах <span data-type="inlineMath" data-latex="\mu\pm 3\sigma" data-display="no"></span>.</li>
+</ul>
+<p>Саме тому значення, які відхиляються від середнього більш як на три сигми, вважають рідкісними і часто перевіряють окремо.</p>
+<h2>Приклад з розв'язанням</h2>
+<p><strong>Задача.</strong> Для вибірки 2, 4, 4, 4, 5, 5, 7, 9 знайти середнє, дисперсію та стандартне відхилення.</p>
+<p><em>Розв'язання.</em> Сума значень дорівнює 40, тому <span data-type="inlineMath" data-latex="\bar{x}=\frac{40}{8}=5" data-display="no"></span>. Квадрати відхилень від 5 дорівнюють 9, 1, 1, 1, 0, 0, 4, 16, а їх сума дорівнює 32. Отже,</p>
+<p><span data-type="inlineMath" data-latex="\sigma^2=\frac{32}{8}=4,\qquad \sigma=2" data-display="yes"></span></p>
+<p>Якщо ж вважати цю вибірку частиною більшої сукупності, то вибіркова дисперсія дорівнює <span data-type="inlineMath" data-latex="\frac{32}{7}\approx 4{,}57" data-display="no"></span>, а стандартне відхилення — близько 2,14.</p>
+<p>Ще один приклад: зріст студентів розподілений нормально з <span data-type="inlineMath" data-latex="\mu=170" data-display="no"></span> см і <span data-type="inlineMath" data-latex="\sigma=10" data-display="no"></span> см. Імовірність того, що випадковий студент вищий за 180 см, знаходимо через <span data-type="inlineMath" data-latex="z=\frac{180-170}{10}=1" data-display="no"></span>, а далі за таблицею: <span data-type="inlineMath" data-latex="P(X\gt 180)\approx 0{,}16" data-display="no"></span>.</p>
+<h2>Перевірка в Python</h2>
+<p>Результати зручно перевірити кодом:</p>
+<pre><code class="language-python">import statistics
+data = [2, 4, 4, 4, 5, 5, 7, 9]
+# середнє арифметичне
+mean = sum(data) / len(data)
+# дисперсія генеральної сукупності: ділимо на n
+var_pop = sum((x - mean) ** 2 for x in data) / len(data)
+# вибіркова дисперсія: ділимо на n - 1
+var_s = sum((x - mean) ** 2 for x in data) / (len(data) - 1)
+print(mean, var_pop)                     # 5.0 4.0
+print(statistics.pvariance(data))        # 4
+print(var_s, statistics.variance(data))  # однакові результати
+</code></pre>
+=== linear-algebra-eigenvalues ===
+title: Матриці та власні значення: розв'язані задачі
+---
+<p>Квадратна матриця A діє на вектори як лінійне перетворення. Найцікавіші для цієї дії вектори — ті, що змінюють лише довжину, але не напрямок. Такі вектори називають власними, а коефіцієнт їхнього розтягу — власним значенням. Формально йдеться про рівність:</p>
+<p><span data-type="inlineMath" data-latex="A\mathbf{v}=\lambda\mathbf{v},\qquad \mathbf{v}\neq \mathbf{0}" data-display="yes"></span></p>
+<h2>Характеристичне рівняння</h2>
+<p>Перепишемо умову як <span data-type="inlineMath" data-latex="(A-\lambda E)\mathbf{v}=\mathbf{0}" data-display="no"></span>, де E — одинична матриця. Ненульовий розв'язок такої системи існує тоді й лише тоді, коли визначник дорівнює нулю:</p>
+<p><span data-type="inlineMath" data-latex="\det(A-\lambda E)=0" data-display="yes"></span></p>
+<p>Ліва частина є многочленом від λ степеня n. Його корені і є власними значеннями матриці.</p>
+<h2>Задача з розв'язанням</h2>
+<p><strong>Умова.</strong> Знайти власні значення і власні вектори матриці <code>A = [[2, 1], [1, 2]]</code>.</p>
+<p><em>Розв'язання.</em> Обчислюємо визначник матриці A−λE:</p>
+<p><span data-type="inlineMath" data-latex="\det(A-\lambda E)=(2-\lambda)^2-1=\lambda^2-4\lambda+3=(\lambda-1)(\lambda-3)" data-display="yes"></span></p>
+<p>Отже, власні значення <span data-type="inlineMath" data-latex="\lambda_1=1" data-display="no"></span> і <span data-type="inlineMath" data-latex="\lambda_2=3" data-display="no"></span>. Для λ = 3 система зводиться до рівняння −v1 + v2 = 0, тому вектор <span data-type="inlineMath" data-latex="(1,\,1)" data-display="no"></span> є власним. Для λ = 1 маємо v1 + v2 = 0, і вектор (1, −1) також власний.</p>
+<p>Перевірка: множення матриці A на вектор (1, 1) дає (3, 3), тобто 3·(1, 1).</p>
+<h2>Властивості, які корисно знати</h2>
+<ul>
+<li>Сума власних значень дорівнює сліду матриці: <span data-type="inlineMath" data-latex="\lambda_1+\lambda_2=\operatorname{tr}A=4" data-display="no"></span>.</li>
+<li>Добуток власних значень дорівнює визначнику: <span data-type="inlineMath" data-latex="\lambda_1\lambda_2=\det A=3" data-display="no"></span>.</li>
+<li>Власні вектори, що відповідають різним власним значенням, лінійно незалежні.</li>
+</ul>
+<h2>Перевірка в Python</h2>
+<pre><code class="language-python">A = [[2, 1], [1, 2]]
+for lam in (1, 3):
+    # визначник матриці A - lam*E для розміру 2x2
+    d = (A[0][0] - lam) * (A[1][1] - lam) - A[0][1] * A[1][0]
+    print(lam, d)  # для власних значень результат має дорівнювати 0
+</code></pre>
+=== number-theory-primes-gcd ===
+title: Теорія чисел: прості числа та найбільший спільний дільник
+---
+<p>Теорія чисел вивчає властивості цілих чисел. Її ідеї здаються простими, але саме тут з'явилися одні з найзагадковіших питань математики. У цій статті ми розглянемо прості числа, їхню роль у розкладі на множники та алгоритм знаходження найбільшого спільного дільника. Для доведень у цій темі часто використовують <a href="{{doc:induction-short-proof}}">метод математичної індукції</a>.</p>
+<h2>Подільність і прості числа</h2>
+<p>Кажуть, що ціле число <span data-type="inlineMath" data-latex="a" data-display="no"></span> ділиться на ціле <span data-type="inlineMath" data-latex="b\neq 0" data-display="no"></span>, якщо існує ціле <span data-type="inlineMath" data-latex="k" data-display="no"></span> таке, що <span data-type="inlineMath" data-latex="a=bk" data-display="no"></span>. Натуральне число <span data-type="inlineMath" data-latex="p" data-display="no"></span>, більше за одиницю, називають простим, якщо воно має рівно два натуральні дільники: одиницю і саме <span data-type="inlineMath" data-latex="p" data-display="no"></span>. Числа 2, 3, 5, 7 і 11 прості, а 9 = 3 · 3 — ні.</p>
+<p>Важлива властивість: якщо число <span data-type="inlineMath" data-latex="n" data-display="no"></span> складене, то воно має простий дільник, не більший за <span data-type="inlineMath" data-latex="\sqrt{n}" data-display="no"></span>. Тому перевірити число <span data-type="inlineMath" data-latex="n" data-display="no"></span> на простоту можна, ділячи його на прості числа, не більші за корінь із <span data-type="inlineMath" data-latex="n" data-display="no"></span>. Наприклад, число 97 просте, адже <span data-type="inlineMath" data-latex="\sqrt{97}\approx 9{,}8" data-display="no"></span>, а серед чисел 2, 3, 5 і 7 жодне не є його дільником.</p>
+<h2>Решето Ератосфена</h2>
+<p>Простий спосіб знайти всі прості числа до заданої межі — решето Ератосфена. Записуємо числа від 2 до <span data-type="inlineMath" data-latex="N" data-display="no"></span>, а потім по черзі викреслюємо кратні кожного знайденого простого числа. Числа, що залишилися, — прості. Для <span data-type="inlineMath" data-latex="N=50" data-display="no"></span> таких чисел п'ятнадцять:</p>
+<p>2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47.</p>
+<h2>Основна теорема арифметики</h2>
+<p>Кожне натуральне число, більше за одиницю, єдиним чином (з точністю до порядку множників) розкладається в добуток простих чисел. Наприклад:</p>
+<p><span data-type="inlineMath" data-latex="360=2^3\cdot 3^2\cdot 5" data-display="yes"></span></p>
+<p>Цей розклад дає зручний спосіб знаходити дільники. Кількість дільників числа 360 дорівнює <span data-type="inlineMath" data-latex="(3+1)(2+1)(1+1)=24" data-display="no"></span>, бо показники степенів збільшуємо на одиницю і перемножуємо.</p>
+<h2>Найбільший спільний дільник</h2>
+<p>Найбільший спільний дільник (НСД) чисел <span data-type="inlineMath" data-latex="a" data-display="no"></span> і <span data-type="inlineMath" data-latex="b" data-display="no"></span> позначають <span data-type="inlineMath" data-latex="\gcd(a,b)" data-display="no"></span>. Швидко знаходити його дозволяє алгоритм Евкліда, що ґрунтується на простій ідеї: спільні дільники <span data-type="inlineMath" data-latex="a" data-display="no"></span> і <span data-type="inlineMath" data-latex="b" data-display="no"></span> збігаються зі спільними дільниками пари <span data-type="inlineMath" data-latex="b" data-display="no"></span> та остачі від ділення <span data-type="inlineMath" data-latex="a" data-display="no"></span> на <span data-type="inlineMath" data-latex="b" data-display="no"></span>.</p>
+<p><span data-type="inlineMath" data-latex="\gcd(a,b)=\gcd(b,\,a \bmod b),\qquad \gcd(a,0)=a" data-display="yes"></span></p>
+<p>Алгоритм повторює ділення з остачею, доки остача не стане нульовою. Останній ненульовий дільник і є НСД. Для пари 252 і 105 це виглядає так:</p>
+<ul>
+<li>252 ділимо на 105: остача 42;</li>
+<li>105 ділимо на 42: остача 21;</li>
+<li>42 ділимо на 21: остача 0.</li>
+</ul>
+<p>Отже, <span data-type="inlineMath" data-latex="\gcd(252,105)=21" data-display="no"></span>.</p>
+<h2>Зв'язок НСД і НСК</h2>
+<p>Найменше спільне кратне (НСК) пов'язане з НСД простою формулою:</p>
+<p><span data-type="inlineMath" data-latex="\gcd(a,b)\cdot\operatorname{lcm}(a,b)=a\cdot b" data-display="yes"></span></p>
+<p>Для чисел 252 і 105 маємо <span data-type="inlineMath" data-latex="252\cdot 105=26\,460" data-display="no"></span>, тож <span data-type="inlineMath" data-latex="\operatorname{lcm}(252,105)=\frac{26\,460}{21}=1260" data-display="no"></span>. Перевіримо через розклад: <span data-type="inlineMath" data-latex="252=2^2\cdot 3^2\cdot 7" data-display="no"></span>, <span data-type="inlineMath" data-latex="105=3\cdot 5\cdot 7" data-display="no"></span>, а отже, <span data-type="inlineMath" data-latex="\operatorname{lcm}(252,105)=2^2\cdot 3^2\cdot 5\cdot 7=1260" data-display="no"></span>.</p>
+<h2>Задачі з розв'язаннями</h2>
+<p><strong>Задача 1.</strong> Чи є число 221 простим?</p>
+<p><em>Розв'язання.</em> Оскільки <span data-type="inlineMath" data-latex="\sqrt{221}\approx 14{,}9" data-display="no"></span>, достатньо перевірити прості числа 2, 3, 5, 7, 11 і 13. Число 221 не ділиться на 2, 3, 5, 7 і 11 (остачі 1, 2, 1, 4 і 1 відповідно), але <span data-type="inlineMath" data-latex="221=13\cdot 17" data-display="no"></span>. Отже, число складене.</p>
+<p><strong>Задача 2.</strong> Знайти всі натуральні <span data-type="inlineMath" data-latex="n" data-display="no"></span>, для яких <span data-type="inlineMath" data-latex="n\leq 12" data-display="no"></span> і <span data-type="inlineMath" data-latex="\gcd(n,12)=1" data-display="no"></span>.</p>
+<p><em>Розв'язання.</em> Перебираємо числа від 1 до 12. Взаємно прості з 12 є лише ті, що не діляться ні на 2, ні на 3: це 1, 5, 7 і 11. Отже, відповідь: <span data-type="inlineMath" data-latex="n\in\{1,5,7,11\}" data-display="no"></span>.</p>
+<h2>Перевірка в Python</h2>
+<p>Ті самі результати можна перевірити кодом:</p>
+<pre><code class="language-python">import math
+# НСД і НСК чисел 252 і 105
+a, b = 252, 105
+print(math.gcd(a, b))           # 21
+print(a * b // math.gcd(a, b))  # 1260
+
+def is_prime(n):
+    # числа менші за 2 не є простими
+    if n &lt; 2:
+        return False
+    # перевіряємо дільники до кореня з n
+    for d in range(2, int(math.sqrt(n)) + 1):
+        if n % d == 0:
+            return False
+    return True
+
+print([p for p in range(2, 30) if is_prime(p)])  # прості числа до 30
+</code></pre>
+=== combinatorics-cheatsheet ===
+title: Комбінаторика: коротка шпаргалка
+---
+<p>Комбінаторика відповідає на питання «скільки є способів» без перелічування всіх варіантів. Ось формули для вибірок з n різних елементів по k:</p>
+<ul>
+<li>перестановки (беремо всі елементи, порядок важливий): <span data-type="inlineMath" data-latex="P_n=n!" data-display="no"></span>;</li>
+<li>розміщення (порядок важливий): <span data-type="inlineMath" data-latex="A_n^k=\frac{n!}{(n-k)!}" data-display="no"></span>;</li>
+<li>сполучення (порядок не важливий): <span data-type="inlineMath" data-latex="C_n^k=\frac{n!}{k!\,(n-k)!}" data-display="no"></span>.</li>
+</ul>
+<p>Приклад: скільки є способів обрати трьох учнів із десяти? Порядок тут не важливий, тож <span data-type="inlineMath" data-latex="C_{10}^3=\frac{10!}{3!\,7!}=120" data-display="no"></span>.</p>
+=== induction-short-proof ===
+title: Метод математичної індукції: коротке доведення
+---
+<p>Метод математичної індукції доводить твердження для всіх натуральних n за два кроки: базу (перевірка при n = 1) і крок (із припущення для k випливає твердження для k + 1).</p>
+<p>Доведемо формулу для суми перших n чисел:</p>
+<p><span data-type="inlineMath" data-latex="\sum_{k=1}^{n}k=\frac{n(n+1)}{2}" data-display="yes"></span></p>
+<p><strong>База.</strong> При <span data-type="inlineMath" data-latex="n=1" data-display="no"></span> ліва частина дорівнює 1, а права: <span data-type="inlineMath" data-latex="\frac{1\cdot 2}{2}=1" data-display="no"></span>.</p>
+<p><strong>Крок.</strong> Нехай формула правильна для деякого k. Тоді</p>
+<p><span data-type="inlineMath" data-latex="\sum_{i=1}^{k+1}i=\frac{k(k+1)}{2}+(k+1)=\frac{(k+1)(k+2)}{2}" data-display="yes"></span></p>
+<p>Отже, формула правильна і для k + 1, а значить, для всіх натуральних n.</p>

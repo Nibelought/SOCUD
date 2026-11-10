@@ -20,6 +20,7 @@
     "openapi:export": "nest build && node dist/openapi/export-openapi.js openapi.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:seed": "prisma db seed",
+    "seed:demo": "ts-node src/scripts/seed-demo.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

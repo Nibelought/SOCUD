@@ -1,0 +1,213 @@
+=== number-theory-primes-gcd ===
+title: Primes and the greatest common divisor
+---
+<p>A prime is a natural number greater than 1 whose only positive divisors are 1 and itself. The first primes are 2, 3, 5, 7, 11 and 13.</p>
+<p>The greatest common divisor gcd(a, b) of two integers is the largest positive integer that divides both of them. Euclid's algorithm finds it by replacing the pair (a, b) with (b, a mod b) until the second number becomes 0.</p>
+<p>Example: gcd(252, 105). Since 252 = 2 · 105 + 42, we get gcd(252, 105) = gcd(105, 42). Then 105 = 2 · 42 + 21 and 42 = 2 · 21, so the answer is 21.</p>
+<p>The gcd and the least common multiple are linked by <span data-type="inlineMath" data-latex="\gcd(a,b)\cdot\operatorname{lcm}(a,b)=ab" data-display="no"></span> for positive integers a and b.</p>
+=== induction-short-proof ===
+title: Mathematical induction with a short proof
+---
+<p>To prove that a statement P(n) holds for every natural number n, check two things: the base case P(1), and the inductive step, which shows <span data-type="inlineMath" data-latex="P(k)\Rightarrow P(k+1)" data-display="no"></span> for every k.</p>
+<p>Claim: the sum of the first n natural numbers equals n(n+1)/2.</p>
+<p>Base case: for n = 1 the left side is 1, and the right side is 1 · 2 / 2 = 1 as well.</p>
+<p>Inductive step: assume the claim holds for k. Adding k + 1 to both sides gives</p>
+<p><span data-type="inlineMath" data-latex="\frac{k(k+1)}{2}+(k+1)=\frac{(k+1)(k+2)}{2}" data-display="yes"></span></p>
+<p>which is exactly the claim for k + 1. By induction, the formula holds for every natural number n.</p>
+=== matrices-eigenvalues ===
+title: Eigenvalues and eigenvectors explained
+---
+<p>Most vectors change direction when a matrix acts on them. A few special vectors keep their direction and are only stretched or shrunk. These vectors are the eigenvectors of the matrix, and the stretching factors are the eigenvalues.</p>
+<p>Formally, a nonzero vector v is an eigenvector of a square matrix A when <span data-type="inlineMath" data-latex="Av=\lambda v" data-display="no"></span> for some scalar λ. The number λ is the eigenvalue that belongs to v.</p>
+<h2>Finding the eigenvalues</h2>
+<p>Rewrite the equation as (A - λI)v = 0, where I is the identity matrix. A nonzero solution v exists only if A - λI is singular, so the eigenvalues are the roots of the characteristic polynomial:</p>
+<p><span data-type="inlineMath" data-latex="\det(A-\lambda I)=0" data-display="yes"></span></p>
+<p>Once the eigenvalues are known, the eigenvectors come from solving (A - λI)v = 0 separately for each eigenvalue.</p>
+<h2>Worked example</h2>
+<p>Let A be the 2 by 2 matrix with rows (4, 1) and (2, 3). The determinant of A - λI is <span data-type="inlineMath" data-latex="(4-\lambda)(3-\lambda)-2=\lambda^2-7\lambda+10=(\lambda-2)(\lambda-5)" data-display="no"></span>, so the eigenvalues are 2 and 5.</p>
+<p>For λ = 5, the system (A - 5I)v = 0 reads -v1 + v2 = 0, so v = (1, 1) is an eigenvector. Check: A(1, 1) = (5, 5) = 5(1, 1).</p>
+<p>For λ = 2, the system reads 2v1 + v2 = 0, so v = (1, -2) works. Check: A(1, -2) = (2, -4) = 2(1, -2).</p>
+<p>Two quick checks confirm the arithmetic. The trace of A is 4 + 3 = 7, which equals 2 + 5. The determinant of A is 4 · 3 - 1 · 2 = 10, which equals 2 · 5.</p>
+<h2>Why eigenvalues matter</h2>
+<p>If an n by n matrix has n linearly independent eigenvectors, it can be written as <span data-type="inlineMath" data-latex="A=PDP^{-1}" data-display="no"></span>, where D is diagonal and holds the eigenvalues. Powers then become easy, because <span data-type="inlineMath" data-latex="A^k=PD^kP^{-1}" data-display="no"></span> and raising a diagonal matrix to a power only raises its diagonal entries.</p>
+<p>This idea appears in population models, vibration analysis and Google's original PageRank algorithm, where the ranking vector is an eigenvector of a huge matrix of links.</p>
+<ol>
+<li>Form the matrix A - λI.</li>
+<li>Compute its determinant and solve the characteristic equation.</li>
+<li>For each eigenvalue, solve (A - λI)v = 0 to get the eigenvectors.</li>
+</ol>
+=== probability-bayes ===
+title: Bayes' theorem with a problem set
+---
+<p>Bayes' theorem explains how to update a probability when new evidence arrives. For events A and B with P(B) greater than 0 it states:</p>
+<p><span data-type="inlineMath" data-latex="P(A\mid B)=\frac{P(B\mid A)\,P(A)}{P(B)}" data-display="yes"></span></p>
+<p>The denominator is usually expanded with the law of total probability, <span data-type="inlineMath" data-latex="P(B)=P(B\mid A)P(A)+P(B\mid A^c)P(A^c)" data-display="no"></span>, where A^c is the complement of A.</p>
+<h2>Problem 1: a medical test</h2>
+<p>A test detects a disease in 95 percent of sick patients and gives a false positive for 2 percent of healthy patients. The disease affects 1 percent of the population. If a patient tests positive, what is the probability that the patient is actually sick?</p>
+<h3>Solution</h3>
+<p>Let D be the event that the patient is sick and + the event of a positive test. We know P(D) = 0.01, P(+ | D) = 0.95 and P(+ | not D) = 0.02. The total probability of a positive test is</p>
+<p><span data-type="inlineMath" data-latex="P(+)=0.95\cdot 0.01+0.02\cdot 0.99=0.0095+0.0198=0.0293" data-display="yes"></span></p>
+<p>so Bayes' theorem gives P(D | +) = 0.0095 / 0.0293, which is about 0.324. Only about one positive result in three is a true case, even though the test is quite accurate. Healthy people are so numerous that their false positives outnumber the true cases.</p>
+<h2>Problem 2: a coin from a box</h2>
+<p>A box contains a fair coin and a coin with two heads. A coin is picked at random and flipped, and it shows heads. What is the probability that it is the two-headed coin? The same coin is then flipped again and shows heads a second time. What is the new probability?</p>
+<h3>Solution</h3>
+<p>Let T be the event of picking the two-headed coin. Then P(T) = 1/2, P(H | T) = 1 and P(H | fair) = 1/2, so the probability of heads is</p>
+<p><span data-type="inlineMath" data-latex="P(H)=\frac12\cdot 1+\frac12\cdot\frac12=\frac34" data-display="yes"></span></p>
+<p>and Bayes' theorem gives P(T | H) = (1/2) / (3/4) = 2/3.</p>
+<p>For the second flip, the posterior 2/3 becomes the new prior. Then <span data-type="inlineMath" data-latex="P(T\mid HH)=\frac{\frac23\cdot 1}{\frac23\cdot 1+\frac13\cdot\frac12}=\frac45" data-display="no"></span>, so seeing a second head raises the probability to 4/5.</p>
+=== combinatorics-cheat-sheet ===
+title: Combinatorics cheat sheet
+---
+<p>Combinatorics counts how many ways something can happen. Start by deciding whether order matters and whether repetition is allowed.</p>
+<h2>Core formulas</h2>
+<ul>
+<li>Permutations of n distinct objects: <span data-type="inlineMath" data-latex="n!" data-display="no"></span>.</li>
+<li>Arrangements of k objects chosen from n, order matters: <span data-type="inlineMath" data-latex="P(n,k)=\frac{n!}{(n-k)!}" data-display="no"></span>.</li>
+<li>Combinations, order does not matter: <span data-type="inlineMath" data-latex="\binom{n}{k}=\frac{n!}{k!\,(n-k)!}" data-display="no"></span>.</li>
+<li>Arrangements with repeated letters: <span data-type="inlineMath" data-latex="\frac{n!}{n_1!\,n_2!\cdots n_r!}" data-display="no"></span>.</li>
+<li>Nonnegative integer solutions of x_1 + ... + x_k = n: <span data-type="inlineMath" data-latex="\binom{n+k-1}{k-1}" data-display="no"></span>, the stars and bars count.</li>
+</ul>
+<p>Inclusion-exclusion for two finite sets:</p>
+<p><span data-type="inlineMath" data-latex="|A\cup B|=|A|+|B|-|A\cap B|" data-display="yes"></span></p>
+<h2>Worked examples</h2>
+<p>How many distinct arrangements of the letters in MISSISSIPPI are there? The word has 11 letters: M appears once, I four times, S four times and P twice. The count is</p>
+<p><span data-type="inlineMath" data-latex="\frac{11!}{1!\,4!\,4!\,2!}=\frac{39916800}{1152}=34650" data-display="yes"></span></p>
+<p>A committee of 3 is chosen from 10 people. There are <span data-type="inlineMath" data-latex="\binom{10}{3}=\frac{10\cdot 9\cdot 8}{3\cdot 2\cdot 1}=120" data-display="no"></span> ways, because the order of the members does not matter.</p>
+<p>How many nonnegative integer solutions does x + y + z = 10 have? Stars and bars gives <span data-type="inlineMath" data-latex="\binom{12}{2}=66" data-display="no"></span> solutions.</p>
+<h2>Inclusion-exclusion and pigeonhole</h2>
+<p>Among the integers from 1 to 100, how many are divisible by 2 or by 3? There are 50 multiples of 2 and 33 multiples of 3. The 16 multiples of 6 were counted twice, so the answer is 50 + 33 - 16 = 67.</p>
+<p>The pigeonhole principle says that if n + 1 objects are placed into n boxes, some box holds at least two objects. For example, among 13 people at least two share a birth month.</p>
+<p>Once outcomes are counted, the probability of an event with equally likely outcomes is favorable outcomes divided by all outcomes. See <a href="{{doc:probability-bayes}}">the Bayes' theorem problem set</a> for examples.</p>
+=== derivatives-integrals ===
+title: Derivatives and integrals explained
+---
+<p>Derivatives and integrals are the two central operations of calculus. The derivative measures how fast a function changes at a point, and the integral measures accumulated quantities such as area, distance and total mass. The fundamental theorem of calculus connects the two, so each can be used to compute the other.</p>
+<h2>The derivative as a limit</h2>
+<p>For a function f, the derivative at x is the limit of difference quotients:</p>
+<p><span data-type="inlineMath" data-latex="f^{\prime}(x)=\lim_{h\to 0}\frac{f(x+h)-f(x)}{h}" data-display="yes"></span></p>
+<p>Geometrically, this is the slope of the tangent line to the graph of f at the point (x, f(x)). For f(x) = x^2, the quotient simplifies to (2xh + h^2) / h = 2x + h, and as h tends to 0 the derivative is 2x.</p>
+<h2>Basic rules</h2>
+<p>Most derivatives in a first course are built from a few rules:</p>
+<ul>
+<li>Power rule: <span data-type="inlineMath" data-latex="\frac{d}{dx}x^n=n\,x^{n-1}" data-display="no"></span> for any real n.</li>
+<li>Sum rule: the derivative of f + g is the sum of the derivatives of f and g.</li>
+<li>Product rule: <span data-type="inlineMath" data-latex="(fg)^{\prime}=f^{\prime}g+fg^{\prime}" data-display="no"></span>.</li>
+<li>Quotient rule: <span data-type="inlineMath" data-latex="\left(\frac{f}{g}\right)^{\prime}=\frac{f^{\prime}g-fg^{\prime}}{g^2}" data-display="no"></span>.</li>
+<li>Chain rule: <span data-type="inlineMath" data-latex="(f\circ g)^{\prime}(x)=f^{\prime}(g(x))\,g^{\prime}(x)" data-display="no"></span>.</li>
+</ul>
+<h2>Worked differentiation</h2>
+<p>Differentiate h(x) = (3x^2 + 1)^5 · sin x. Let u(x) = 3x^2 + 1 and combine the product rule with the chain rule. The derivative of u^5 is 5u^4 · u' = 5(3x^2 + 1)^4 · 6x = 30x(3x^2 + 1)^4. Therefore</p>
+<p><span data-type="inlineMath" data-latex="h^{\prime}(x)=30x(3x^2+1)^4\sin x+(3x^2+1)^5\cos x" data-display="yes"></span></p>
+<p>Derivatives also describe motion. If s(t) is the position of an object at time t, then the velocity is s'(t) and the acceleration is s''(t). For example, s(t) = t^3 - 6t^2 gives the velocity 3t^2 - 12t = 3t(t - 4), which is zero at t = 0 and t = 4.</p>
+<h2>Integrals and the fundamental theorem</h2>
+<p>An antiderivative of f is a function F with F' = f. Antiderivatives are unique up to an added constant C. The definite integral of f over [a, b] is the signed area between the graph of f and the x-axis from a to b. The fundamental theorem of calculus says that if f is continuous on [a, b] and F is any antiderivative of f, then</p>
+<p><span data-type="inlineMath" data-latex="\int_a^b f(x)\,dx=F(b)-F(a)" data-display="yes"></span></p>
+<p>For example, the area under y = x^2 between 0 and 2 is</p>
+<p><span data-type="inlineMath" data-latex="\int_0^2 x^2\,dx=\left[\frac{x^3}{3}\right]_0^2=\frac{8}{3}" data-display="yes"></span></p>
+<p>Geometrically this is the area of the region bounded by the parabola and the x-axis between 0 and 2. Integrals also compute averages: the average value of f on [a, b] is <span data-type="inlineMath" data-latex="\frac{1}{b-a}\int_a^b f(x)\,dx" data-display="no"></span>. For f(x) = x^2 on [0, 2] that is (8/3) / 2 = 4/3.</p>
+<p>The integral is linear, so constant factors can be moved out and integrals of sums can be split. Two standard antiderivatives are worth memorizing: <span data-type="inlineMath" data-latex="\int x^n\,dx=\frac{x^{n+1}}{n+1}+C" data-display="no"></span> for n not equal to -1, and <span data-type="inlineMath" data-latex="\int \frac{1}{x}\,dx=\ln|x|+C" data-display="no"></span>.</p>
+<h2>Worked integration techniques</h2>
+<p>Substitution reverses the chain rule. To compute the integral of 2x cos(x^2), let u = x^2, so du = 2x dx:</p>
+<p><span data-type="inlineMath" data-latex="\int 2x\cos(x^2)\,dx=\int \cos u\,du=\sin u+C=\sin(x^2)+C" data-display="yes"></span></p>
+<p>Integration by parts reverses the product rule: <span data-type="inlineMath" data-latex="\int u\,dv=uv-\int v\,du" data-display="no"></span>. To compute the integral of x e^x, choose u = x and dv = e^x dx, so du = dx and v = e^x. The integral is then x e^x - e^x + C.</p>
+<p>Substitution is easier to check than it looks: differentiate the answer and confirm that you recover the integrand. In the example above, the derivative of sin(x^2) is 2x cos(x^2), as required.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li>Forgetting the chain rule factor, for example writing the derivative of sin(3x) as cos(3x) instead of 3cos(3x).</li>
+<li>Applying the product rule as if it were the product of the two derivatives, which is wrong.</li>
+<li>Omitting the constant C when computing an indefinite integral.</li>
+<li>Applying F(b) - F(a) across a point where f is undefined or unbounded, such as 1/x^2 on [-1, 1], which gives the wrong answer -2.</li>
+</ul>
+<p>Together these rules cover most problems in a first calculus course. Practice with a variety of functions, and always check an integral by differentiating the answer.</p>
+=== taylor-series ===
+title: Taylor series and polynomial approximation
+parent: derivatives-integrals
+---
+<p>A Taylor series expresses a smooth function as an infinite polynomial built from its derivatives at a single point. Every term needs a derivative, so it helps to know <a href="{{doc:derivatives-integrals}}">the derivatives and integrals explainer</a> first.</p>
+<h2>The idea</h2>
+<p>Near a point a, a smooth function can be approximated by its tangent line, which is the first-order Taylor polynomial. Higher-order polynomials match more derivatives at a, and therefore follow the function more closely in a neighborhood of a.</p>
+<h2>Definition</h2>
+<p>If f is infinitely differentiable at a, its Taylor series centered at a is</p>
+<p><span data-type="inlineMath" data-latex="f(x)=\sum_{n=0}^{\infty}\frac{f^{(n)}(a)}{n!}(x-a)^n" data-display="yes"></span></p>
+<p>When a = 0 the series is usually called the Maclaurin series. Its first terms are f(a) + f'(a)(x - a) + f''(a)(x - a)^2 / 2 + ..., where f^{(n)} denotes the n-th derivative.</p>
+<h2>Standard series</h2>
+<p>Several series are worth memorizing. Each one holds on the range stated.</p>
+<ul>
+<li><span data-type="inlineMath" data-latex="e^x=\sum_{n=0}^{\infty}\frac{x^n}{n!}" data-display="no"></span>, valid for all real x.</li>
+<li><span data-type="inlineMath" data-latex="\sin x=\sum_{n=0}^{\infty}\frac{(-1)^n x^{2n+1}}{(2n+1)!}" data-display="no"></span>, valid for all real x.</li>
+<li><span data-type="inlineMath" data-latex="\cos x=\sum_{n=0}^{\infty}\frac{(-1)^n x^{2n}}{(2n)!}" data-display="no"></span>, valid for all real x.</li>
+<li><span data-type="inlineMath" data-latex="\frac{1}{1-x}=\sum_{n=0}^{\infty}x^n" data-display="no"></span>, valid for |x| less than 1.</li>
+<li><span data-type="inlineMath" data-latex="\ln(1+x)=\sum_{n=1}^{\infty}\frac{(-1)^{n+1}x^n}{n}" data-display="no"></span>, valid for -1 less than x, up to and including 1.</li>
+</ul>
+<h2>Worked example: e^0.1</h2>
+<p>Use the series for e^x with x = 0.1. The terms up to x^2 give 1 + 0.1 + 0.005 = 1.105. Adding the cubic term gives 1 + 0.1 + 0.005 + 0.000167 = 1.105167.</p>
+<p><span data-type="inlineMath" data-latex="e^{0.1}\approx 1+0.1+\frac{0.1^2}{2}+\frac{0.1^3}{6}=1.105167" data-display="yes"></span></p>
+<p>The exact value is 1.1051709..., so the error of this cubic approximation is about 0.0000042.</p>
+<h2>Error estimate</h2>
+<p>The Lagrange form of the remainder says that the error after the terms up to degree n equals <span data-type="inlineMath" data-latex="R_n(x)=\frac{f^{(n+1)}(c)}{(n+1)!}(x-a)^{n+1}" data-display="no"></span> for some point c between a and x. For e^x on the interval [0, 0.1], every derivative is at most e^0.1, which is less than 1.2. With n = 3, the error is therefore at most 1.2 · 0.1^4 / 24 = 0.000005.</p>
+<h2>Worked example: sin x near zero</h2>
+<p>The series for sin x around 0 gives sin x ≈ x - x^3/6 + x^5/120. For x = 0.5 this is 0.5 - 0.125/6 + 0.03125/120 = 0.4794271, while the true value is sin 0.5 = 0.4794255. The error is about 1.5 · 10^-6, slightly below the next omitted term, 0.5^7/5040 ≈ 1.55 · 10^-6.</p>
+<p><span data-type="inlineMath" data-latex="\sin x=x-\frac{x^3}{3!}+\frac{x^5}{5!}-\frac{x^7}{7!}+\cdots" data-display="yes"></span></p>
+<p>This alternating pattern is typical: when the terms shrink and alternate in sign, the error after any truncation is no larger than the first omitted term.</p>
+<h2>Python check</h2>
+<p>The snippet below compares the partial sums with the library value of e^0.1. Running it shows how quickly the error shrinks as terms are added.</p>
+<pre><code class="language-python">import math
+
+# Partial sums of the Taylor series for e^x, evaluated at x = 0.1
+x = 0.1
+partial = 0.0
+for n in range(6):
+    partial += x ** n / math.factorial(n)  # add the n-th term
+    error = abs(partial - math.exp(x))     # compare with the library value
+    print(f"terms 0..{n}: sum = {partial:.10f}, error = {error:.2e}")
+</code></pre>
+<p>Each term is about x / n times the previous one, which is why a few terms are usually enough when x is small.</p>
+<h2>Caution about convergence</h2>
+<p>A Taylor series can converge outside the region where it equals the function, and the endpoints of its interval of convergence need separate checks. The series for 1/(1 - x) diverges at both x = 1 and x = -1. A more surprising example is the function e^(-1/x^2), defined as 0 at x = 0: all its derivatives at 0 are zero, so its Taylor series at 0 is identically zero, yet the function is not zero anywhere else.</p>
+<p>Polynomial approximations like these, often combined with range reduction, are one way calculators and math libraries evaluate e^x, sin x and cos x using only arithmetic.</p>
+=== statistics-variance-normal ===
+title: Variance, standard deviation and the normal distribution
+parent: probability-bayes
+---
+<p>Probability describes what might happen, while statistics describes what has happened in data. This guide covers two measures of spread, the variance and the standard deviation, and the normal distribution that appears throughout statistics. It assumes the basics from <a href="{{doc:probability-bayes}}">the Bayes' theorem problem set</a>.</p>
+<h2>Mean and variance</h2>
+<p>For a random variable X with mean μ = E[X], the variance is the expected squared distance from the mean:</p>
+<p><span data-type="inlineMath" data-latex="\operatorname{Var}(X)=E\left[(X-\mu)^2\right]" data-display="yes"></span></p>
+<p>An equivalent and often more convenient form is <span data-type="inlineMath" data-latex="\operatorname{Var}(X)=E[X^2]-\mu^2" data-display="no"></span>. Squaring the deviations makes them positive and penalizes large deviations more heavily than small ones.</p>
+<p>As a worked example, take a fair six-sided die. The mean is 3.5, and E[X^2] = (1 + 4 + 9 + 16 + 25 + 36) / 6 = 91/6. Therefore</p>
+<p><span data-type="inlineMath" data-latex="\operatorname{Var}(X)=\frac{91}{6}-\left(\frac{7}{2}\right)^2=\frac{35}{12}" data-display="yes"></span></p>
+<p>which is about 2.92.</p>
+<h2>Sample variance and the n - 1 divisor</h2>
+<p>When the data is a sample rather than the whole population, the sample variance divides by n - 1 instead of n. Dividing by n would systematically underestimate the population variance, because the sample mean is computed from the same data and therefore sits closer to the observations than the true mean does. Dividing by n - 1 corrects this, a step known as Bessel's correction.</p>
+<p>Example: the sample 2, 4, 4, 4, 5, 5, 7, 9 has mean 5. The squared deviations add up to 9 + 1 + 1 + 1 + 0 + 0 + 4 + 16 = 32. Dividing by n = 8 gives 4, while dividing by n - 1 = 7 gives 32/7, about 4.57.</p>
+<h2>Standard deviation</h2>
+<p>The standard deviation is the square root of the variance, so it has the same units as the data. It is usually written with the Greek letter sigma. For the population in the example above, the standard deviation is exactly 2.</p>
+<p><span data-type="inlineMath" data-latex="\sigma=\sqrt{\operatorname{Var}(X)}" data-display="yes"></span></p>
+<h2>The normal distribution</h2>
+<p>The normal distribution with mean μ and standard deviation σ has the density</p>
+<p><span data-type="inlineMath" data-latex="f(x)=\frac{1}{\sigma\sqrt{2\pi}}\exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right)" data-display="yes"></span></p>
+<p>Its bell shape is symmetric around μ. About 68 percent of the probability lies within one standard deviation of the mean, about 95 percent within two, and about 99.7 percent within three. The central limit theorem explains why so many measured quantities look roughly normal: sums of many independent small effects tend toward a normal distribution.</p>
+<p>To compare values from different normal distributions, convert them to z-scores with <span data-type="inlineMath" data-latex="z=\frac{x-\mu}{\sigma}" data-display="no"></span>. A z-score counts how many standard deviations x lies above the mean.</p>
+<h2>Worked example: exam scores</h2>
+<p>Scores on an exam are approximately normal with mean 70 and standard deviation 8. What fraction of students score at least 80? The z-score of 80 is z = (80 - 70) / 8 = 1.25. From a standard normal table, Phi(1.25) is about 0.8944, so the fraction scoring at least 80 is about 1 - 0.8944 = 0.1056, roughly 11 percent.</p>
+<p><span data-type="inlineMath" data-latex="P(X\geq 80)=P\left(Z\geq 1.25\right)=1-\Phi(1.25)\approx 0.1056" data-display="yes"></span></p>
+<p>Here Z is a standard normal variable and Phi is its cumulative distribution function. The answer depends only on the z-score, so one table serves every normal distribution once the values are standardized.</p>
+<h2>Checking the numbers with Python</h2>
+<p>The snippet below verifies the variance example and the exam probability using only the standard library. The error function gives the standard normal distribution function.</p>
+<pre><code class="language-python">import math
+import statistics
+
+# Sample data from the n - 1 example
+data = [2, 4, 4, 4, 5, 5, 7, 9]
+print(statistics.pvariance(data))           # population variance (divides by n): 4
+print(round(statistics.variance(data), 4))  # sample variance (divides by n - 1): 4.5714
+
+# Standard normal CDF written with the error function
+def phi(z):
+    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+# Fraction of students scoring at least 80 when X is N(70, 8^2)
+z = (80 - 70) / 8
+print(round(1 - phi(z), 4))  # about 0.1056
+</code></pre>
+<p>Variance and standard deviation are sensitive to outliers, because a single extreme value can dominate the sum of squared deviations. For skewed data, the median and the interquartile range are often better summaries. The 68-95-99.7 rule is only as good as the normality assumption, so look at a histogram before relying on it.</p>
