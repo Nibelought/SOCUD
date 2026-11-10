@@ -98,3 +98,38 @@ describe('ConfigModule with validateEnv', () => {
     await moduleRef.close();
   });
 });
+
+describe('validateEnv queue / embedding settings', () => {
+  it('has defaults matching the contract', () => {
+    const env = validateEnv(base);
+    expect(env.REDIS_URL).toBe('redis://127.0.0.1:6379');
+    expect(env.EMBEDDING_DIM).toBe(1024);
+    expect(env.EMBED_CONCURRENCY).toBe(1);
+    expect(env.QUEUE_ENABLED).toBeUndefined();
+    expect(env.QUEUE_WORKER_ENABLED).toBeUndefined();
+  });
+
+  it('parses numbers and booleans from strings', () => {
+    const env = validateEnv({
+      ...base,
+      REDIS_URL: 'redis://redis:6379',
+      EMBEDDING_DIM: '1024',
+      EMBED_RECONCILE_INTERVAL_MS: '0',
+      QUEUE_ENABLED: 'false',
+      QUEUE_WORKER_ENABLED: 'true',
+    });
+    expect(env.REDIS_URL).toBe('redis://redis:6379');
+    expect(env.EMBED_RECONCILE_INTERVAL_MS).toBe(0);
+    expect(env.QUEUE_ENABLED).toBe(false);
+    expect(env.QUEUE_WORKER_ENABLED).toBe(true);
+  });
+
+  it('rejects an invalid boolean or dimension', () => {
+    expect(() => validateEnv({ ...base, QUEUE_ENABLED: 'maybe' })).toThrow(
+      /QUEUE_ENABLED/,
+    );
+    expect(() => validateEnv({ ...base, EMBEDDING_DIM: '0' })).toThrow(
+      /EMBEDDING_DIM/,
+    );
+  });
+});

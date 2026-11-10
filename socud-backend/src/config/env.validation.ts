@@ -1,5 +1,6 @@
-import { plainToInstance, Type } from 'class-transformer';
+import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -12,6 +13,14 @@ import {
 } from 'class-validator';
 
 export const NODE_ENVIRONMENTS = ['development', 'production', 'test'] as const;
+
+const toBoolean = ({ value }: { value: unknown }): unknown => {
+  if (typeof value !== 'string') return value;
+  const v = value.trim().toLowerCase();
+  if (['true', '1', 'yes'].includes(v)) return true;
+  if (['false', '0', 'no'].includes(v)) return false;
+  return value; // fails @IsBoolean with a clear message
+};
 
 /**
  * Typed contract of the environment variables the backend reads.
@@ -50,6 +59,53 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   AI_WORKER_TOKEN?: string;
+
+  /** Redis for the BullMQ embedding queue (compose: redis://redis:6379). */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  REDIS_URL: string = 'redis://127.0.0.1:6379';
+
+  /** Vector size of the embedding model (Qwen3-Embedding truncated to 1024); must match the DB column. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  EMBEDDING_DIM: number = 1024;
+
+  /** Timeout of one /embed call to the AI worker, in ms. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  EMBED_TIMEOUT_MS: number = 60000;
+
+  /** Master switch of the queue (producer + consumer). Default: on, except NODE_ENV=test. */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  QUEUE_ENABLED?: boolean;
+
+  /** Run the embedding consumer in this process. Default: on, except NODE_ENV=test. */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  QUEUE_WORKER_ENABLED?: boolean;
+
+  /** Parallel embedding jobs per process. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(16)
+  EMBED_CONCURRENCY: number = 1;
+
+  /** How often the API looks for documents with missing embeddings, in ms. 0 disables it. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  EMBED_RECONCILE_INTERVAL_MS: number = 600000;
 
   /** Minimum interval between access re-validations of one Hocuspocus connection, in ms. */
   @IsOptional()

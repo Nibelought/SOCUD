@@ -9,6 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { SpaceModule } from './space/space.module';
 import { DocumentModule } from './document/document.module';
+import { QueueModule } from './queue/queue.module';
 import { HocuspocusModule } from './hocuspocus/hocuspocus.module'; // ИМПОРТ
 
 @Module({
@@ -21,6 +22,7 @@ import { HocuspocusModule } from './hocuspocus/hocuspocus.module'; // ИМПОР
     AuthModule,
     SpaceModule,
     DocumentModule,
+    QueueModule,
     HocuspocusModule, // РЕГИСТРАЦИЯ МОДУЛЯ
   ],
   controllers: [AppController],
