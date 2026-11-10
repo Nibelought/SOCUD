@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SpaceModule } from '../space/space.module';
 import { DocumentModule } from '../document/document.module';
 import { HocuspocusModule } from '../hocuspocus/hocuspocus.module';
@@ -20,7 +20,13 @@ jest.mock('@hocuspocus/server', () => ({ Server: class {} }));
 describe('PermissionModule wiring', () => {
   it('resolves PermissionService in Space, Document and Hocuspocus modules', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [SpaceModule, DocumentModule, HocuspocusModule],
+      imports: [
+        // AppModule registers ConfigModule globally; mirror that here.
+        ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
+        SpaceModule,
+        DocumentModule,
+        HocuspocusModule,
+      ],
     })
       .overrideProvider(PrismaService)
       .useValue(createPrismaServiceMock())
