@@ -48,6 +48,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
+  // Self-contained server for the Docker image (`node server.js`); `next dev`/`next build` are unaffected.
+  output: "standalone",
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

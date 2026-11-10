@@ -1,7 +1,20 @@
+# Two ways to use this file (see README):
+#   Local development:  docker compose up -d db            (backend/frontend/worker run natively)
+#   Full stack:         docker compose --profile app up -d --build
+# The AI worker is NOT a service here: it needs Apple's MLX/Metal and runs natively on the host.
+# Containers reach it at http://host.docker.internal:8000 (see AI_WORKER_URL).
+#
+# Networks:
+#   internal  no external access (internal: true): db, redis, backend, migrate talk here.
+#   edge      the backend (and the frontend) publish their ports through this one.
+#   dbhost    only exists so the database's loopback port can be published for native development.
+
+x-node-version: &node-version ${NODE_VERSION:-22}
+
 services:
   db:
     image: pgvector/pgvector:0.8.2-pg18-trixie
-    container_name: socud_postgres
+    container_name: ${POSTGRES_CONTAINER_NAME:-socud_postgres}
     restart: always
     environment:
       # Credentials come from the root .env file (see .env.example); the password has no default.
@@ -11,9 +24,117 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       # Loopback only: the database must not be reachable from the network.
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks: [internal, dbhost]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF persistence so queued jobs survive a restart. No profile: `docker compose up -d db redis`
+    # gives native development both stores. Published on loopback only (like db) for a native backend.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    networks: [internal, dbhost]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: applies pending migrations, then exits. A separate service (instead of an entrypoint
+  # in the API image) keeps the prisma CLI out of the runtime image and avoids races when the
+  # backend is scaled. Also used for seeding: see README ("First admin").
+  migrate:
+    profiles: [app]
+    build:
+      context: ./socud-backend
+      target: migrate
+      args:
+        NODE_VERSION: *node-version
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dbsocud}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-socud_db}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    restart: "no"
+
+  backend:
+    profiles: [app]
+    build:
+      context: ./socud-backend
+      target: runtime
+      args:
+        NODE_VERSION: *node-version
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      WS_PORT: "3002"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dbsocud}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-socud_db}
+      # Required: the backend refuses to start without a 32+ character value (openssl rand -hex 32).
+      JWT_SECRET: ${JWT_SECRET:-}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      # The AI worker runs natively on the host; see extra_hosts below.
+      AI_WORKER_URL: ${AI_WORKER_URL:-http://host.docker.internal:8000}
+      AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    ports:
+      # Loopback only. The browser connects to both: REST (3000) and Hocuspocus WebSocket (3002).
+      - "127.0.0.1:${BACKEND_HOST_PORT:-3000}:3000"
+      - "127.0.0.1:${BACKEND_WS_HOST_PORT:-3002}:3002"
+    extra_hosts:
+      # Makes host.docker.internal resolve on Linux too (Docker Desktop/OrbStack add it themselves).
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # `internal` for db/redis; `edge` for the published ports and for reaching the host's AI worker.
+    networks: [internal, edge]
+
+  frontend:
+    profiles: [app]
+    build:
+      context: ./socud-frontend
+      args:
+        NODE_VERSION: *node-version
+        # Inlined into the browser bundle at build time: these are the URLs the BROWSER uses.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://127.0.0.1:3002}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-3001}:3001"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [edge]
+
+networks:
+  internal:
+    internal: true
+  edge: {}
+  dbhost: {}
 
 volumes:
   pgdata:
+  redisdata:

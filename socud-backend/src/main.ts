@@ -1,3 +1,4 @@
+import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
@@ -5,10 +6,18 @@ import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { parseCorsOrigins } from './config/env.validation';
+import { Logger } from 'nestjs-pino';
+import { SentryGlobalFilter } from '@sentry/nestjs/setup';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const config = app.get(ConfigService);
+
+  // Structured JSON logs (pino); also used for Nest's own Logger calls.
+  app.useLogger(app.get(Logger));
+  if (config.get<string>('SENTRY_DSN')) {
+    app.useGlobalFilters(new SentryGlobalFilter(app.getHttpAdapter()));
+  }
 
   app.use(helmet());
   app.use(cookieParser());

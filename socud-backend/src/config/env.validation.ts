@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNumber,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -11,6 +12,8 @@ import {
   MinLength,
   validateSync,
 } from 'class-validator';
+
+import { LOG_LEVELS } from '../observability/logger.config';
 
 export const NODE_ENVIRONMENTS = ['development', 'production', 'test'] as const;
 
@@ -126,6 +129,25 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   CORS_ORIGIN: string = 'http://localhost:3001';
+
+  /** pino log level; defaults to info in production, debug otherwise, silent in tests. */
+  @IsOptional()
+  @IsIn(LOG_LEVELS)
+  LOG_LEVEL?: (typeof LOG_LEVELS)[number];
+
+  /** Enables Sentry error reporting when set. Leave unset to disable. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  SENTRY_DSN?: string;
+
+  /** Fraction (0..1) of requests sampled for Sentry performance traces; 0 disables tracing. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  SENTRY_TRACES_SAMPLE_RATE: number = 0;
 
   @IsOptional()
   @IsIn(NODE_ENVIRONMENTS)

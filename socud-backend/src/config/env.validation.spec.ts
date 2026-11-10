@@ -133,3 +133,33 @@ describe('validateEnv queue / embedding settings', () => {
     );
   });
 });
+
+describe('validateEnv observability settings', () => {
+  it('has safe defaults: no Sentry, no tracing, no explicit log level', () => {
+    const env = validateEnv(base);
+    expect(env.SENTRY_DSN).toBeUndefined();
+    expect(env.LOG_LEVEL).toBeUndefined();
+    expect(env.SENTRY_TRACES_SAMPLE_RATE).toBe(0);
+  });
+
+  it('accepts valid values', () => {
+    const env = validateEnv({
+      ...base,
+      LOG_LEVEL: 'debug',
+      SENTRY_DSN: 'https://k@example.com/1',
+      SENTRY_TRACES_SAMPLE_RATE: '0.5',
+    });
+    expect(env.LOG_LEVEL).toBe('debug');
+    expect(env.SENTRY_DSN).toBe('https://k@example.com/1');
+    expect(env.SENTRY_TRACES_SAMPLE_RATE).toBe(0.5);
+  });
+
+  it('rejects an unknown log level and an out-of-range sample rate', () => {
+    expect(() => validateEnv({ ...base, LOG_LEVEL: 'loud' })).toThrow(
+      /LOG_LEVEL/,
+    );
+    expect(() =>
+      validateEnv({ ...base, SENTRY_TRACES_SAMPLE_RATE: '2' }),
+    ).toThrow(/SENTRY_TRACES_SAMPLE_RATE/);
+  });
+});
