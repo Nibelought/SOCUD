@@ -1,0 +1,14 @@
+/**
+ * Message of a Nest error body (`{ statusCode, message: string | string[], error }`).
+ * Validation errors carry a list of messages; they are joined with ", ".
+ */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const { message } = error as { message?: unknown };
+    if (typeof message === 'string' && message) return message;
+    if (Array.isArray(message) && message.length > 0) {
+      return message.map(String).join(', ');
+    }
+  }
+  return fallback;
+}
