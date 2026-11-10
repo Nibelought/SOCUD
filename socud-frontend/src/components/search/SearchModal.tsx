@@ -144,7 +144,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
                 {/* Footer */}
                 <div className="bg-slate-50 px-4 py-3 border-t border-slate-100 text-xs text-slate-400 flex justify-between items-center">
                     <span>Press <kbd className="font-sans px-1.5 py-0.5 bg-slate-200 rounded text-slate-600">Esc</kbd> to close</span>
-                    <span className="flex items-center gap-1">Powered by <Sparkles className="w-3 h-3 text-purple-500" /> E5</span>
+                    <span className="flex items-center gap-1">Powered by <Sparkles className="w-3 h-3 text-purple-500" /> Qwen3</span>
                 </div>
             </div>
         </div>

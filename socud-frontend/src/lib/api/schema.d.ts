@@ -645,13 +645,23 @@ export interface components {
             /** Format: uuid */
             id: string;
             title: string;
-            /** @description Space name; may be absent for keyword hits. */
-            space?: string;
+            /** @description Space name. */
+            space: string;
+            /** @description PLAIN TEXT (never HTML): render it as text. */
             snippet: string;
             /** @enum {string} */
             type: "semantic" | "keyword";
-            /** @description Similarity in 0..1 for semantic hits, null for keyword hits. */
+            /** @description Cosine similarity in 0..1 of the best chunk for semantic matches, otherwise null. */
             score: number | null;
+            /** @description Retrievers that found the document. */
+            matchedBy: ("semantic" | "keyword" | "title")[];
+            /** @description Reciprocal-rank-fusion value the results are ordered by (not a percentage). */
+            rrfScore: number;
+            /** @description Matched ranges inside `snippet` (keyword matches only). */
+            highlights?: {
+                start?: number;
+                end?: number;
+            }[];
         };
         DocumentViewDto: {
             /** Format: uuid */

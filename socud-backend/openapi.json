@@ -2738,10 +2738,11 @@
           },
           "space": {
             "type": "string",
-            "description": "Space name; may be absent for keyword hits."
+            "description": "Space name."
           },
           "snippet": {
-            "type": "string"
+            "type": "string",
+            "description": "PLAIN TEXT (never HTML): render it as text."
           },
           "type": {
             "enum": [
@@ -2753,15 +2754,49 @@
           "score": {
             "type": "number",
             "nullable": true,
-            "description": "Similarity in 0..1 for semantic hits, null for keyword hits."
+            "description": "Cosine similarity in 0..1 of the best chunk for semantic matches, otherwise null."
+          },
+          "matchedBy": {
+            "type": "array",
+            "description": "Retrievers that found the document.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "semantic",
+                "keyword",
+                "title"
+              ]
+            }
+          },
+          "rrfScore": {
+            "type": "number",
+            "description": "Reciprocal-rank-fusion value the results are ordered by (not a percentage)."
+          },
+          "highlights": {
+            "description": "Matched ranges inside `snippet` (keyword matches only).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "integer"
+                },
+                "end": {
+                  "type": "integer"
+                }
+              }
+            }
           }
         },
         "required": [
           "id",
           "title",
+          "space",
           "snippet",
           "type",
-          "score"
+          "score",
+          "matchedBy",
+          "rrfScore"
         ]
       },
       "DocumentViewDto": {
