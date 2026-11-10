@@ -74,12 +74,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Requirements are not installed on purpose: torch is several GB and
-      # importing main.py downloads the model. Only static checks run here.
-      - name: Syntax check
-        run: python -m py_compile main.py
+      # MLX is macOS/Apple Silicon only, so the model is never loaded in CI. Only requirements-dev.txt
+      # (no mlx) is installed; tests that need mlx skip themselves via pytest.importorskip.
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
 
-      - name: Lint (syntax errors and undefined names only)
-        run: |
-          pip install ruff
-          ruff check --select E9,F63,F7,F82 .
+      - name: Lint
+        run: ruff check .
+
+      - name: Tests
+        run: pytest -q

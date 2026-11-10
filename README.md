@@ -9,7 +9,7 @@ SOCUD is a collaborative knowledge base and a Confluence alternative. Teams orga
 | `socud-frontend` | Next.js 16, React 19, Tiptap, Yjs | 3001 |
 | `socud-backend` (REST) | NestJS 11, Prisma 7 | 3000 |
 | `socud-backend` (WebSocket) | Hocuspocus (collaborative editing) | 3002 |
-| `socud-ai-worker` | FastAPI, sentence-transformers (`intfloat/multilingual-e5-base`, 768-dim) | 8000 |
+| `socud-ai-worker` | FastAPI, MLX (`Qwen3-Embedding-4B-4bit-DWQ`, 1024-dim), native on Apple Silicon | 8000 |
 | PostgreSQL (`docker-compose.yml`) | PostgreSQL 18 + pgvector | 5432 |
 
 REST and WebSocket (Hocuspocus) run in the same NestJS process.
@@ -17,7 +17,7 @@ REST and WebSocket (Hocuspocus) run in the same NestJS process.
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`; `nvm use` picks it up). The backend needs Node >= 20.19, the frontend >= 20.9.
-- Python 3.12
+- Python 3.12 or newer (the AI worker is developed on 3.14) on an Apple Silicon Mac (MLX; the worker does not run in Docker or on Intel/Linux)
 - Docker (for PostgreSQL with pgvector)
 
 ## Quick start
@@ -35,7 +35,7 @@ docker compose up -d
 # 3. Backend: start (REST on 3000, WebSocket on 3002)
 cd socud-backend && npm run start:dev
 
-# 4. AI worker (the ~1 GB model downloads on first start)
+# 4. AI worker, natively on the Mac (the ~2.3 GB model downloads on first start; see "AI worker" below)
 cd socud-ai-worker && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python main.py
 
 # 5. Frontend
@@ -88,12 +88,28 @@ Both variables are inlined at build time, so rebuild after changing them.
 
 ### AI worker (`socud-ai-worker/.env`, optional)
 
+The worker computes embeddings with `mlx-community/Qwen3-Embedding-4B-4bit-DWQ` using [MLX](https://github.com/ml-explore/mlx), so it runs natively on an Apple Silicon Mac. MLX has no Metal access inside Docker, so it is not containerized; containers reach it at `http://host.docker.internal:8000` (this needs `HOST=0.0.0.0`, then also set `WORKER_TOKEN` and keep the port off the network). Embeddings are 1024-dimensional (Matryoshka-truncated, L2-normalised), last-token pooled; queries get the `Instruct: ...\nQuery:` prefix, documents do not.
+
+```bash
+cd socud-ai-worker
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python main.py        # http://127.0.0.1:8000
+```
+
+The first start downloads the model (about 2.3 GB) into `~/.cache/huggingface`. The port opens immediately; `GET /health` returns 503 `{"status":"loading"}` until the model is ready, then 200 `{"status":"ok","model":...,"dim":1024,"device":"mlx"}`. With the model loaded the worker needs roughly 3 to 5 GB of memory. To verify a running worker end to end (dimension, norm, Russian/English retrieval), run `python scripts/smoke_test.py`.
+
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `MODEL_NAME` | no | `intfloat/multilingual-e5-base` | Sentence-transformers model |
+| `MODEL_NAME` | no | `mlx-community/Qwen3-Embedding-4B-4bit-DWQ` | MLX checkpoint (Hugging Face id) |
+| `EMBEDDING_DIM` | no | `1024` | Output dimension (first N components, renormalised); must match the backend's `vector(1024)` column |
+| `MAX_TOKENS` | no | `8192` | Longer texts are truncated to this many tokens, not rejected |
+| `QUERY_INSTRUCTION` | no | `Given a search query, retrieve relevant passages from a knowledge base that answer the query` | Task text placed in the query prefix; documents get none |
 | `MAX_BATCH_SIZE` | no | `32` | Maximum texts per `/embed` request |
-| `MAX_TEXT_LENGTH` | no | `15000` | Maximum characters per text |
-| `INFERENCE_BATCH_SIZE` | no | `16` | Internal inference batch size |
+| `MAX_TEXT_LENGTH` | no | `32000` | Maximum characters per text (longer: HTTP 422) |
+| `DTYPE` | no | `float16` | Compute dtype, `float16` or `bfloat16` (float16 is faster on M1; embeddings differ by cosine >= 0.9998) |
+| `INFERENCE_BATCH_SIZE` | no | `8` | Maximum texts per forward pass |
+| `INFERENCE_TOKEN_BUDGET` | no | `16384` | Maximum padded tokens (batch size x longest text) per forward pass |
 | `HOST` | no | `127.0.0.1` | Bind address (loopback; change only together with `WORKER_TOKEN` and a firewall or internal network) |
 | `PORT` | no | `8000` | Bind port |
 | `WORKER_TOKEN` | no | none | If set, `POST /embed` requires the header `X-Worker-Token: <value>` (`/health` stays open); set the same value as `AI_WORKER_TOKEN` in the backend |
@@ -111,9 +127,9 @@ Both variables are inlined at build time, so rebuild after changing them.
 | `socud-frontend` | `npm run typecheck` | TypeScript check |
 | `socud-frontend` | `npm test` | Unit tests (Vitest) |
 | `socud-frontend` | `npm run build` | Production build |
-| `socud-ai-worker` | `python -m py_compile main.py` | Syntax check |
+| `socud-ai-worker` | `pip install -r requirements-dev.txt && ruff check . && pytest` | Lint and unit tests (no model, no MLX needed) |
 
-GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker on every push and pull request to `main`. The worker job runs only a syntax check and a minimal `ruff` lint, because installing its dependencies (PyTorch, model download) is too heavy for CI.
+GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker on every push and pull request to `main`. The worker job installs only `requirements-dev.txt` (no MLX, which is macOS-only) and runs `ruff` and `pytest`; tests that need MLX skip themselves, and the model is never loaded in CI.
 
 ## Security model
 

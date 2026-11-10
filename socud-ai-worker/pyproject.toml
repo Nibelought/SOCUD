@@ -9,3 +9,6 @@ exclude = [".venv"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E501"]

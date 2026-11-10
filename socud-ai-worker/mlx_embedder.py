@@ -61,6 +61,8 @@ class MlxEmbedder:
             eos_id = tokenizer.convert_tokens_to_ids(EOS_TOKEN)
             if eos_id is None or eos_id == getattr(tokenizer, "unk_token_id", None):
                 raise RuntimeError(f"Tokenizer has no {EOS_TOKEN} token")
+            if self.settings.dtype != "bfloat16":
+                model.set_dtype(getattr(mx, self.settings.dtype))
             self._model, self._tokenizer = model, tokenizer
             self._eos_id = int(eos_id)
             self._pad_id = int(tokenizer.pad_token_id if tokenizer.pad_token_id is not None else eos_id)
@@ -107,6 +109,8 @@ class MlxEmbedder:
             result = np.zeros((len(sequences), self.dim), dtype=np.float32)
             for batch in batches:
                 vectors = self._forward([sequences[i] for i in batch])
+                if not np.isfinite(vectors).all():
+                    raise RuntimeError(f"Non-finite embedding (dtype={self.settings.dtype}); try DTYPE=bfloat16")
                 result[batch] = mrl_truncate(vectors, self.dim)
             mx.clear_cache()  # return the activation buffer cache to the OS between requests
             return result
