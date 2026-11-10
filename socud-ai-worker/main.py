@@ -1,4 +1,6 @@
-"""SOCUD AI worker: HTTP API around the Qwen3 embedding model (runs natively on Apple Silicon)."""
+"""SOCUD AI worker: HTTP API around the Qwen3 embedding model.
+
+Runs natively on Apple Silicon (MLX) or on any machine with PyTorch, e.g. a PC with an NVIDIA GPU (CUDA)."""
 
 import asyncio
 import logging
@@ -31,9 +33,26 @@ class Embedder(Protocol):
 
 
 def default_embedder_factory(settings: Settings) -> Embedder:
-    from mlx_embedder import MlxEmbedder  # imported lazily: needs Apple Silicon + mlx
+    # Imported lazily: each backend needs its own heavy dependency (mlx on Apple Silicon, torch elsewhere).
+    if settings.backend == "mlx":
+        from mlx_embedder import MlxEmbedder
 
-    return MlxEmbedder(settings)
+        return MlxEmbedder(settings)
+    if settings.backend == "openai":
+        from remote_embedder import RemoteEmbedder
+
+        return RemoteEmbedder(settings)
+    try:
+        from torch_embedder import TorchEmbedder
+
+        return TorchEmbedder(settings)
+    except ModuleNotFoundError as e:
+        if e.name and e.name.split(".")[0] in {"torch", "transformers"}:
+            raise RuntimeError(
+                f"BACKEND=torch needs {e.name}: install the PyTorch dependencies with requirements-cuda.txt "
+                "(see README, \"Running the worker on another machine\")"
+            ) from e
+        raise
 
 
 def make_embed_request(settings: Settings) -> type[BaseModel]:
@@ -59,9 +78,10 @@ def create_app(
     settings = settings or Settings()
     embedder = embedder_factory(settings)
     EmbedRequest = make_embed_request(settings)
-    # One dedicated thread runs every MLX call (loading and inference): MLX streams are per-thread, and a single
+    # One dedicated thread runs every local model call (loading and inference): MLX streams are per-thread, and a single
     # worker also serialises access to the model (the embedder additionally holds a lock).
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx")
+    # A remote server can take several requests at once (RemoteEmbedder.concurrency); local models cannot.
+    executor = ThreadPoolExecutor(max_workers=getattr(embedder, "concurrency", 1), thread_name_prefix="embed")
     state = {"status": "loading", "error": None}
 
     async def load_model() -> None:

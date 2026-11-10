@@ -1,7 +1,8 @@
-# Runtime dependencies. Apple Silicon only (MLX); tested with Python 3.14 (Homebrew) and macOS on an M1.
+# Runtime dependencies of the Apple Silicon (MLX) worker; tested with Python 3.14 (Homebrew) and macOS on an M1.
 # Lower bounds are the versions this worker was developed and verified against.
-mlx>=0.32.4
-mlx-lm>=0.32.2
+# For a worker on a machine with an NVIDIA GPU (or any non-Apple host) install requirements-cuda.txt instead.
+mlx>=0.32.4; sys_platform == "darwin" and platform_machine == "arm64"
+mlx-lm>=0.32.2; sys_platform == "darwin" and platform_machine == "arm64"
 numpy>=2.5.4
 fastapi>=0.162.3
 uvicorn[standard]>=0.54.0

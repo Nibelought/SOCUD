@@ -2,7 +2,8 @@
 #   Local development:  docker compose up -d db            (backend/frontend/worker run natively)
 #   Full stack:         docker compose --profile app up -d --build
 # The AI worker is NOT a service here: it needs Apple's MLX/Metal and runs natively on the host.
-# Containers reach it at http://host.docker.internal:8000 (see AI_WORKER_URL).
+# Containers reach it at http://host.docker.internal:8000 (see AI_WORKER_URL), or a worker on another machine
+# (e.g. a PC with an NVIDIA GPU) at its LAN address: set AI_WORKER_URL and AI_WORKER_TOKEN in .env.
 #
 # Networks:
 #   internal  no external access (internal: true): db, redis, backend, migrate talk here.
