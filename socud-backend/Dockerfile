@@ -13,7 +13,7 @@ RUN apt-get update \
 
 # All dependencies (dev included): used to build and by the migrate target.
 FROM base AS deps
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
 FROM deps AS build
@@ -26,7 +26,7 @@ RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npx prisma genera
 
 # Production dependencies only.
 FROM base AS prod-deps
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # One-shot job image: full node_modules (prisma CLI, ts-node) + migrations + seed sources.

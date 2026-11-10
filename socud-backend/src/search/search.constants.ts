@@ -1,6 +1,6 @@
 /**
  * Text search configuration of the generated tsvector columns (migration
- * 20261111090000_search_fts_trgm). Queries MUST use the same configuration or stems will not
+ * 20261110160000_search_fts_trgm). Queries MUST use the same configuration or stems will not
  * match. 'russian' stems Cyrillic words with russian_stem and ASCII words with english_stem.
  */
 export const FTS_CONFIG = 'russian';
