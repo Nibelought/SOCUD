@@ -39,6 +39,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test -- --ci
       - run: npm run build
+      # The committed OpenAPI document must match the code (regenerate with `npm run openapi:export`).
+      - name: OpenAPI document is up to date
+        run: |
+          npm run openapi:export
+          git diff --exit-code -- openapi.json
 
   frontend:
     name: Frontend (Next.js)
@@ -56,10 +61,58 @@ jobs:
           cache-dependency-path: socud-frontend/package-lock.json
 
       - run: npm ci
+      # Generated API types must match ../socud-backend/openapi.json (regenerate with `npm run api:gen`).
+      - name: API types are up to date
+        run: |
+          npm run api:gen
+          git diff --exit-code -- src/lib/api/
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  docker:
+    name: Docker images (build only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Read Node version
+        id: node
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Build backend image (runtime)
+        uses: docker/build-push-action@v6
+        with:
+          context: socud-backend
+          target: runtime
+          push: false
+          build-args: NODE_VERSION=${{ steps.node.outputs.version }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build backend image (migrate)
+        uses: docker/build-push-action@v6
+        with:
+          context: socud-backend
+          target: migrate
+          push: false
+          build-args: NODE_VERSION=${{ steps.node.outputs.version }}
+          cache-from: type=gha,scope=backend
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: socud-frontend
+          push: false
+          build-args: NODE_VERSION=${{ steps.node.outputs.version }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      - name: Validate compose file
+        run: POSTGRES_PASSWORD=ci-dummy docker compose --profile app config -q
 
   ai-worker:
     name: AI worker (Python)
@@ -74,12 +127,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Requirements are not installed on purpose: torch is several GB and
-      # importing main.py downloads the model. Only static checks run here.
-      - name: Syntax check
-        run: python -m py_compile main.py
+      # MLX is macOS/Apple Silicon only, so the model is never loaded in CI. Only requirements-dev.txt
+      # (no mlx) is installed; tests that need mlx skip themselves via pytest.importorskip.
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
 
-      - name: Lint (syntax errors and undefined names only)
-        run: |
-          pip install ruff
-          ruff check --select E9,F63,F7,F82 .
+      - name: Lint
+        run: ruff check .
+
+      - name: Tests
+        run: pytest -q

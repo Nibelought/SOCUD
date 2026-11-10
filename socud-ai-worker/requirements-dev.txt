@@ -1,0 +1,8 @@
+# Test/lint dependencies only: no mlx, so this installs on Linux CI. mlx-dependent tests skip themselves.
+fastapi>=0.162.3
+pydantic>=2.14.3
+pydantic-settings>=2.16.2
+numpy>=2.0
+httpx2>=2.16.0
+pytest>=9.0
+ruff>=0.15

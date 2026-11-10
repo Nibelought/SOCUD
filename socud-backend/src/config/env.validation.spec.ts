@@ -98,3 +98,104 @@ describe('ConfigModule with validateEnv', () => {
     await moduleRef.close();
   });
 });
+
+describe('validateEnv queue / embedding settings', () => {
+  it('has defaults matching the contract', () => {
+    const env = validateEnv(base);
+    expect(env.REDIS_URL).toBe('redis://127.0.0.1:6379');
+    expect(env.EMBEDDING_DIM).toBe(1024);
+    expect(env.EMBED_CONCURRENCY).toBe(1);
+    expect(env.QUEUE_ENABLED).toBeUndefined();
+    expect(env.QUEUE_WORKER_ENABLED).toBeUndefined();
+  });
+
+  it('parses numbers and booleans from strings', () => {
+    const env = validateEnv({
+      ...base,
+      REDIS_URL: 'redis://redis:6379',
+      EMBEDDING_DIM: '1024',
+      EMBED_RECONCILE_INTERVAL_MS: '0',
+      QUEUE_ENABLED: 'false',
+      QUEUE_WORKER_ENABLED: 'true',
+    });
+    expect(env.REDIS_URL).toBe('redis://redis:6379');
+    expect(env.EMBED_RECONCILE_INTERVAL_MS).toBe(0);
+    expect(env.QUEUE_ENABLED).toBe(false);
+    expect(env.QUEUE_WORKER_ENABLED).toBe(true);
+  });
+
+  it('rejects an invalid boolean or dimension', () => {
+    expect(() => validateEnv({ ...base, QUEUE_ENABLED: 'maybe' })).toThrow(
+      /QUEUE_ENABLED/,
+    );
+    expect(() => validateEnv({ ...base, EMBEDDING_DIM: '0' })).toThrow(
+      /EMBEDDING_DIM/,
+    );
+  });
+});
+
+describe('validateEnv observability settings', () => {
+  it('has safe defaults: no Sentry, no tracing, no explicit log level', () => {
+    const env = validateEnv(base);
+    expect(env.SENTRY_DSN).toBeUndefined();
+    expect(env.LOG_LEVEL).toBeUndefined();
+    expect(env.SENTRY_TRACES_SAMPLE_RATE).toBe(0);
+  });
+
+  it('accepts valid values', () => {
+    const env = validateEnv({
+      ...base,
+      LOG_LEVEL: 'debug',
+      SENTRY_DSN: 'https://k@example.com/1',
+      SENTRY_TRACES_SAMPLE_RATE: '0.5',
+    });
+    expect(env.LOG_LEVEL).toBe('debug');
+    expect(env.SENTRY_DSN).toBe('https://k@example.com/1');
+    expect(env.SENTRY_TRACES_SAMPLE_RATE).toBe(0.5);
+  });
+
+  it('rejects an unknown log level and an out-of-range sample rate', () => {
+    expect(() => validateEnv({ ...base, LOG_LEVEL: 'loud' })).toThrow(
+      /LOG_LEVEL/,
+    );
+    expect(() =>
+      validateEnv({ ...base, SENTRY_TRACES_SAMPLE_RATE: '2' }),
+    ).toThrow(/SENTRY_TRACES_SAMPLE_RATE/);
+  });
+});
+
+describe('validateEnv SEARCH_MIN_SIMILARITY', () => {
+  it('defaults to 0.35 and accepts values in -1..1', () => {
+    expect(validateEnv(base).SEARCH_MIN_SIMILARITY).toBe(0.35);
+    expect(
+      validateEnv({ ...base, SEARCH_MIN_SIMILARITY: '0.5' })
+        .SEARCH_MIN_SIMILARITY,
+    ).toBe(0.5);
+  });
+
+  it('rejects values outside -1..1', () => {
+    expect(() =>
+      validateEnv({ ...base, SEARCH_MIN_SIMILARITY: '1.5' }),
+    ).toThrow();
+  });
+});
+
+describe('validateEnv Swagger / session cookie settings', () => {
+  it('leaves SWAGGER_ENABLED and SESSION_COOKIE_DOMAIN unset by default', () => {
+    const env = validateEnv(base);
+    expect(env.SWAGGER_ENABLED).toBeUndefined();
+    expect(env.SESSION_COOKIE_DOMAIN).toBeUndefined();
+  });
+
+  it('parses SWAGGER_ENABLED from strings ("false" is false, not truthy)', () => {
+    expect(
+      validateEnv({ ...base, SWAGGER_ENABLED: 'false' }).SWAGGER_ENABLED,
+    ).toBe(false);
+    expect(
+      validateEnv({ ...base, SWAGGER_ENABLED: 'true' }).SWAGGER_ENABLED,
+    ).toBe(true);
+    expect(() => validateEnv({ ...base, SWAGGER_ENABLED: 'maybe' })).toThrow(
+      /SWAGGER_ENABLED/,
+    );
+  });
+});

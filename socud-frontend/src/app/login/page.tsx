@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setAccessToken } from '@/lib/auth';
-import { API_URL } from "@/lib/config";
+import { publicApi } from '@/lib/api/public-client';
+import { apiErrorMessage } from '@/lib/api/errors';
+import { DEFAULT_AFTER_LOGIN, safeNextPath } from '@/lib/session';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -20,23 +22,20 @@ export default function LoginPage() {
         setError("");
 
         try {
-            const res = await fetch(`${API_URL}/auth/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ email, password }),
+            const { data, error } = await publicApi.POST('/auth/login', {
+                body: { email, password },
             });
 
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.message || "Login failed");
+            if (!data) {
+                throw new Error(apiErrorMessage(error, "Login failed"));
             }
 
             // Refresh-токен приходит в httpOnly cookie; в localStorage хранится только access
             setAccessToken(data.access_token);
 
-            router.push("/dashboard");
+            // Return to the page the proxy / session expiry sent us from (validated same-origin path).
+            const next = safeNextPath(new URLSearchParams(window.location.search).get("next"));
+            router.push(next ?? DEFAULT_AFTER_LOGIN);
         } catch (err: any) {
             setError(err.message);
         } finally {

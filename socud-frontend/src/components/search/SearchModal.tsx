@@ -3,16 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X, Loader2, Sparkles, Text, FileText } from "lucide-react";
-import { API_URL } from "@/lib/config";
+import { api, type components } from "@/lib/api/client";
 
-interface SearchResult {
-    id: string;
-    title: string;
-    space: string;
-    snippet: string;
-    type: 'semantic' | 'keyword';
-    score: number | null;
-}
+type SearchResult = components["schemas"]["SearchResultDto"];
 
 interface SearchModalProps {
     isOpen: boolean;
@@ -59,13 +52,11 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
         setLoading(true);
         const delayDebounceFn = setTimeout(async () => {
             try {
-                const token = localStorage.getItem("socud_token");
-                const res = await fetch(`${API_URL}/document/search?q=${encodeURIComponent(query)}`, {
-                    headers: { "Authorization": `Bearer ${token}` }
+                const { data, response } = await api.GET("/document/search", {
+                    params: { query: { q: query } },
                 });
 
-                if (res.ok) {
-                    const data = await res.json();
+                if (response.ok && data) {
                     setResults(data);
                 }
             } catch (err) {
@@ -153,7 +144,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
                 {/* Footer */}
                 <div className="bg-slate-50 px-4 py-3 border-t border-slate-100 text-xs text-slate-400 flex justify-between items-center">
                     <span>Press <kbd className="font-sans px-1.5 py-0.5 bg-slate-200 rounded text-slate-600">Esc</kbd> to close</span>
-                    <span className="flex items-center gap-1">Powered by <Sparkles className="w-3 h-3 text-purple-500" /> E5</span>
+                    <span className="flex items-center gap-1">Powered by <Sparkles className="w-3 h-3 text-purple-500" /> Qwen3</span>
                 </div>
             </div>
         </div>

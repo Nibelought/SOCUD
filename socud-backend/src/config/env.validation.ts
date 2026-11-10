@@ -1,7 +1,9 @@
-import { plainToInstance, Type } from 'class-transformer';
+import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
+  IsNumber,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -11,7 +13,17 @@ import {
   validateSync,
 } from 'class-validator';
 
+import { LOG_LEVELS } from '../observability/logger.config';
+
 export const NODE_ENVIRONMENTS = ['development', 'production', 'test'] as const;
+
+const toBoolean = ({ value }: { value: unknown }): unknown => {
+  if (typeof value !== 'string') return value;
+  const v = value.trim().toLowerCase();
+  if (['true', '1', 'yes'].includes(v)) return true;
+  if (['false', '0', 'no'].includes(v)) return false;
+  return value; // fails @IsBoolean with a clear message
+};
 
 /**
  * Typed contract of the environment variables the backend reads.
@@ -51,6 +63,99 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   AI_WORKER_TOKEN?: string;
 
+  /** Redis for the BullMQ embedding queue (compose: redis://redis:6379). */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  REDIS_URL: string = 'redis://127.0.0.1:6379';
+
+  /** Vector size of the embedding model (Qwen3-Embedding truncated to 1024); must match the DB column. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  EMBEDDING_DIM: number = 1024;
+
+  /** Timeout of one /embed call to the AI worker, in ms. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  EMBED_TIMEOUT_MS: number = 180000;
+
+  /** Timeout of a search-query /embed call, in ms. Short: search falls back to keyword results. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  EMBED_QUERY_TIMEOUT_MS: number = 10000;
+
+  /** Texts per /embed call when embedding documents (the worker accepts at most 32). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(32)
+  EMBED_BATCH_SIZE: number = 1;
+
+  /**
+   * Search: semantic hits with a cosine similarity below this are dropped (the nearest chunks are
+   * otherwise returned even when nothing is relevant). 0.35 was calibrated with Qwen3-Embedding-4B
+   * (1024-dim MRL, query instruction): best chunks of relevant documents scored 0.44-0.78 (median
+   * 0.62), best chunks for queries with no relevant document 0.13-0.39 (median 0.28).
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-1)
+  @Max(1)
+  SEARCH_MIN_SIMILARITY: number = 0.35;
+
+  /** Master switch of the queue (producer + consumer). Default: on, except NODE_ENV=test. */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  QUEUE_ENABLED?: boolean;
+
+  /** Run the embedding consumer in this process. Default: on, except NODE_ENV=test. */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  QUEUE_WORKER_ENABLED?: boolean;
+
+  /** Parallel embedding jobs per process. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(16)
+  EMBED_CONCURRENCY: number = 1;
+
+  /** How often the API looks for documents with missing embeddings, in ms. 0 disables it. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  EMBED_RECONCILE_INTERVAL_MS: number = 600000;
+
+  /**
+   * Serves Swagger UI at /api/docs and the OpenAPI JSON at /api/docs-json.
+   * Unset: enabled unless NODE_ENV=production (see `isSwaggerEnabled`).
+   */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  SWAGGER_ENABLED?: boolean;
+
+  /**
+   * Optional `Domain` attribute of the `socud_session` hint cookie, needed only when the web app and
+   * the API live on different subdomains (e.g. `.example.com`). Unset: host-only cookie.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  SESSION_COOKIE_DOMAIN?: string;
+
   /** Minimum interval between access re-validations of one Hocuspocus connection, in ms. */
   @IsOptional()
   @Type(() => Number)
@@ -70,6 +175,25 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   CORS_ORIGIN: string = 'http://localhost:3001';
+
+  /** pino log level; defaults to info in production, debug otherwise, silent in tests. */
+  @IsOptional()
+  @IsIn(LOG_LEVELS)
+  LOG_LEVEL?: (typeof LOG_LEVELS)[number];
+
+  /** Enables Sentry error reporting when set. Leave unset to disable. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  SENTRY_DSN?: string;
+
+  /** Fraction (0..1) of requests sampled for Sentry performance traces; 0 disables tracing. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  SENTRY_TRACES_SAMPLE_RATE: number = 0;
 
   @IsOptional()
   @IsIn(NODE_ENVIRONMENTS)

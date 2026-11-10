@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  extensions = [vector]
+  extensions = [vector, pg_trgm]
 }
 
 model User {
@@ -20,6 +20,7 @@ model User {
 
   documentsAuthored Document[] @relation("DocumentAuthor")
   documentsUpdated  Document[] @relation("DocumentUpdater")
+  documentVersions  DocumentVersion[]
 
   refreshTokens RefreshToken[]
 }
@@ -94,8 +95,16 @@ model Document {
   spaceId     String
   parentId    String?
   title       String
+  // Published content: frozen by Publish, what viewers and search see.
   contentHtml String?
   yjsState    Bytes?
+  // Draft projection of yjsState (sanitized HTML / plain text), refreshed by Hocuspocus onStoreDocument.
+  draftHtml   String?
+  draftText   String?
+  // Number of the last Publish (0 = never published through the versioned flow).
+  publishedVersion Int  @default(0)
+  // publishedVersion whose chunks are fully embedded; NULL = never. Drives idempotent backfill.
+  embeddedVersion  Int?
 
   createdBy String
   updatedBy String?
@@ -113,22 +122,38 @@ model Document {
   children Document[]       @relation("DocumentHierarchy")
   members  DocumentMember[]
   chunks   DocumentChunk[]
+  versions DocumentVersion[]
 
   sourceLinks DocumentLink[] @relation("SourceLinks")
   targetLinks DocumentLink[] @relation("TargetLinks")
+
+  // GENERATED ALWAYS AS (setweight(to_tsvector('russian', title), 'A')) STORED, see migration
+  // 20261111090000_search_fts_trgm. Never written by the client (the @default only mirrors the
+  // generation expression so that `prisma migrate dev` sees no drift). Published body text is
+  // searched through DocumentChunk.searchVector.
+  searchVector Unsupported("tsvector")? @default(dbgenerated("setweight(to_tsvector('russian'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\")"))
 
   // IDOR
   @@index([spaceId])
   @@index([parentId])
   @@index([isArchived])
+  // Full-text search over titles and trigram similarity (typos, partial words) over titles.
+  @@index([searchVector], type: Gin, map: "Document_searchVector_idx")
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "Document_title_trgm_idx")
 }
 
 model DocumentChunk {
   id          String @id @default(uuid())
   documentId  String
+  chunkIndex  Int    @default(0)
   textContent String
 
-  embedding Unsupported("vector(768)")
+  // NULL until the embed-document job has stored the vector (Qwen3-Embedding, 1024 dims).
+  embedding Unsupported("vector(1024)")?
+
+  // GENERATED ALWAYS AS (setweight(to_tsvector('russian', "textContent"), 'B')) STORED, see
+  // migration 20261111090000_search_fts_trgm. Never written by the client (see Document.searchVector).
+  searchVector Unsupported("tsvector")? @default(dbgenerated("setweight(to_tsvector('russian'::regconfig, COALESCE(\"textContent\", ''::text)), 'B'::\"char\")"))
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -136,6 +161,25 @@ model DocumentChunk {
   // vector_cosine_ops
   @@index([embedding], map: "DocumentChunk_embedding_hnsw_idx")
   @@index([documentId])
+  @@index([searchVector], type: Gin, map: "DocumentChunk_searchVector_idx")
+}
+
+// Immutable snapshot taken by Publish.
+model DocumentVersion {
+  id          String   @id @default(uuid())
+  documentId  String
+  version     Int
+  title       String
+  contentHtml String
+  yjsState    Bytes?
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [createdBy], references: [id])
+
+  @@unique([documentId, version])
+  @@index([documentId, createdAt])
 }
 
 model DocumentLink {
