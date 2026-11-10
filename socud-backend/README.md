@@ -96,3 +96,28 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Demo data
+
+`npm run seed:demo` fills the database with ~96 documents in English, Russian and Ukrainian
+(programming, mathematics, finance), five users (`anna|ivan|maria|oleg|kate@demo.socud.local`,
+password `DemoPass-2026!` unless `--password` / `SEED_DEMO_PASSWORD`), three `[Demo] …` spaces, a
+document tree, drafts, an archived document, version history and cross-links. Texts live in
+`prisma/demo-data` (format: `prisma/demo-data/README.md`); the seed runs offline.
+
+```bash
+npm run seed:demo                              # everything, no vectors
+npm run seed:demo -- --exclude ru              # leave out a language (or --langs en,uk)
+npm run seed:demo -- --topics programming      # only some topics
+npm run seed:demo -- --limit 12                # small sample mixed across languages/topics
+npm run seed:demo -- --embed                   # also vectorize (AI worker must be running)
+npm run seed:demo -- --embed=queue             # enqueue jobs for a running API/worker instead
+npm run seed:demo -- --reset                   # replace earlier demo data
+npm run seed:demo -- --if-missing              # add nothing if demo data exists (exit 0); for scripts
+```
+
+Re-running without `--reset` refuses to add duplicates; `--if-missing` makes that a no-op instead of an
+error (`--reset` and `--if-missing` cannot be combined). `--reset` removes only `[Demo] ` spaces and
+`@demo.socud.local` users. The script refuses to run with `NODE_ENV=production`. Without `--embed`
+the chunks have no vectors (keyword search works, semantic search does not) and a running API
+embeds them ~10 s after start; set `EMBED_RECONCILE_INTERVAL_MS=0` to prevent that.

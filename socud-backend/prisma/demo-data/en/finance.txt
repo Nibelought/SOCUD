@@ -1,0 +1,205 @@
+=== compound-interest ===
+title: Compound interest explained
+---
+<p>Compound interest is interest earned on both the original principal and on the interest already added to it. Because each period's interest joins the balance, it starts to earn interest itself.</p>
+<p>For an account that compounds <em>n</em> times per year, the balance after <em>t</em> years is:</p>
+<p><span data-type="inlineMath" data-latex="A = P\left(1+\frac{r}{n}\right)^{nt}" data-display="yes"></span></p>
+<p>Here <em>P</em> is the principal and <em>r</em> is the annual rate as a decimal. For example, 1,000 at 5 percent compounded monthly for 10 years grows to about 1,647 before fees or taxes.</p>
+=== personal-budgeting ===
+title: Building a simple monthly budget
+---
+<p>A budget is a plan for where each month's income will go before it is spent. It does not need to track every coffee. Its purpose is to make sure fixed costs are covered and that savings happen on purpose.</p>
+<h2>Monthly checklist</h2>
+<ul>
+<li>List take-home income for a typical month.</li>
+<li>Write down fixed costs such as rent, utilities and loan payments.</li>
+<li>Estimate variable costs from your last three months of statements.</li>
+<li>Compare planned spending with income and adjust one line at a time.</li>
+</ul>
+<p>Suppose take-home pay is 3,000. If fixed costs are 1,800, variable costs are 700 and savings are 300, the remaining 200 acts as a buffer. Every unit of money should have a planned job.</p>
+=== portfolio-diversification ===
+title: Portfolio diversification
+---
+<p>Diversification means spreading money across assets whose returns do not move in exactly the same way. The idea is simple: a single holding can fall sharply for reasons unrelated to the rest of a portfolio, so owning several different holdings tends to smooth the path of total value. Diversification does not guarantee a profit or prevent losses in a broad market decline, but it can reduce the impact of any one investment going wrong.</p>
+<h2>Why correlation matters</h2>
+<p>The benefit depends on how returns move together. Correlation measures this relationship on a scale from minus one to plus one. Assets with a correlation near one tend to rise and fall together, so combining them offers little protection. Assets with low or negative correlation can offset each other, which lowers overall volatility for a given expected return.</p>
+<p>For a portfolio of two assets with weights w1 and w2, the variance of the total return is:</p>
+<p><span data-type="inlineMath" data-latex="\sigma_p^2 = w_1^2\sigma_1^2 + w_2^2\sigma_2^2 + 2w_1w_2\rho\sigma_1\sigma_2" data-display="yes"></span></p>
+<p>The last term is the one that matters for diversification. Here rho is the correlation between the two returns. When rho is lower, total variance is lower, even though the weighted average of the individual volatilities stays the same.</p>
+<h2>A worked example</h2>
+<p>Imagine a portfolio with two assets, each with a volatility of 15 percent, split 50 percent in each. If the correlation between them is 1, the portfolio volatility is also 15 percent, because the two assets always move together. If the correlation is 0.3, the portfolio volatility falls to about 12.1 percent. With zero correlation it falls further, to about 10.6 percent. The calculation uses the formula above with each weight set to 0.5 and each volatility set to 0.15.</p>
+<h2>Common mistakes</h2>
+<ul>
+<li>Holding several funds that track the same index, which adds little new exposure.</li>
+<li>Assuming correlations stay constant, although they often rise during market stress.</li>
+<li>Ignoring costs and taxes, which can erode the benefit of rebalancing.</li>
+<li>Counting the number of holdings instead of looking at the risk factors they share.</li>
+</ul>
+<p>Diversification is a general principle rather than a recommendation for any particular mix. Its effects are easiest to judge over long periods, when drawdowns matter as much as average returns.</p>
+=== bonds-and-yield ===
+title: Bonds and yield
+---
+<p>A bond is a loan that an investor makes to a borrower such as a government or a company. The borrower pays periodic interest, called the coupon, and repays the face value at maturity. After issue, bonds trade in the market at prices that can rise or fall, so the return depends on the price paid as well as on the coupon.</p>
+<h2>Coupon, price and current yield</h2>
+<p>The coupon rate is fixed at issue and is quoted as a share of face value. The market price can be above or below face value. Current yield compares the annual coupon with the price actually paid. The formula is <span data-type="inlineMath" data-latex="y_c = \frac{C}{P}" data-display="no"></span>, where C is the annual coupon and P is the market price.</p>
+<h2>Why prices and yields move in opposite directions</h2>
+<p>When market rates rise, newly issued bonds offer higher coupons, so older bonds with lower coupons become less attractive and their prices fall. When rates fall, older bonds with higher coupons gain value. A bond fund can therefore lose value even when every bond it holds pays its coupon on time.</p>
+<h2>A worked example</h2>
+<p>Consider a bond with a face value of 1,000 and an annual coupon of 50, a 5 percent coupon rate. If the bond trades at 950, the current yield is 50 divided by 950, or about 5.26 percent. If it trades at 1,050, the current yield falls to about 4.76 percent. Buying at a discount raises the return because the bond also repays its full face value at maturity, assuming the issuer does not default.</p>
+<p>Yield to maturity also counts the gap between price and face value, which current yield ignores. For the bond above, assuming ten years to maturity, a rough approximation is (50 + 5) divided by 975, or about 5.6 percent. This is an estimate, not a full calculation, but it shows why buying at a discount raises yield.</p>
+<h2>Risks to keep in mind</h2>
+<ul>
+<li>Interest rate risk: prices can fall when market rates rise, especially for long maturities.</li>
+<li>Credit risk: the issuer may pay late or default.</li>
+<li>Inflation risk: a fixed coupon loses purchasing power when prices rise faster than expected.</li>
+<li>Liquidity risk: some bonds are hard to sell quickly at a fair price.</li>
+</ul>
+=== loans-and-annuity-payments ===
+title: Loans and annuity payments
+parent: compound-interest
+---
+<p>Many loans, such as mortgages and car loans, are repaid in equal installments. Each installment is part of an annuity, which is a stream of equal payments made at regular intervals. The payment depends on the principal, the interest rate per period and the number of payments. This article explains how the payment is computed and how it splits between interest and principal. Interest on a loan follows the same logic as <a href="{{doc:compound-interest}}">compound interest</a>, applied to a balance that the borrower owes.</p>
+<h2>The annuity payment formula</h2>
+<p>For a loan with principal P, a periodic rate r and n total payments, the level payment M is:</p>
+<p><span data-type="inlineMath" data-latex="M = P\,\frac{r}{1-(1+r)^{-n}}" data-display="yes"></span></p>
+<p>Here r is the annual rate divided by the number of payments per year. For a 30-year mortgage with monthly payments, r is the annual rate divided by 12 and n is 360. Each month, the interest portion equals the outstanding balance multiplied by r, and the rest of the payment reduces the balance.</p>
+<h2>A worked example</h2>
+<p>Take a loan of 200,000 at 6 percent annual interest over 30 years. The monthly rate is 0.5 percent, or 0.005, and there are 360 payments. Plugging these in gives a monthly payment of about 1,199.10. In the first month, interest is 200,000 times 0.005, or 1,000, so only about 199 goes to principal. Early payments are mostly interest, and the share going to principal grows over time.</p>
+<p>A short script can generate the schedule. The function returns the level payment, and the loop tracks the balance for the first three months:</p>
+<pre><code class="language-python"># Level monthly payment and the first rows of the schedule
+def level_payment(principal, annual_rate, years):
+    r = annual_rate / 12          # monthly rate
+    n = years * 12                # total number of payments
+    return principal * r / (1 - (1 + r) ** -n)
+
+payment = level_payment(200_000, 0.06, 30)
+balance = 200_000
+for month in range(1, 4):
+    interest = balance * 0.06 / 12
+    principal_part = payment - interest
+    balance -= principal_part
+    print(month, round(interest, 2), round(principal_part, 2), round(balance, 2))
+</code></pre>
+<h2>Frequently asked questions</h2>
+<h3>Does a longer term lower the monthly payment?</h3>
+<p>Yes, because the principal is spread over more periods. Total interest paid usually rises, however, since the balance stays outstanding for longer.</p>
+<h3>What happens if I make an extra principal payment?</h3>
+<p>The balance falls sooner, so future interest is charged on a smaller amount. Many loans allow this, but some charge penalties, so the terms should be checked first.</p>
+=== inflation ===
+title: Inflation and purchasing power
+---
+<p>Inflation is the general increase in prices over time, which means each unit of money buys fewer goods and services than it did before. It is usually measured with a price index that tracks a fixed basket of items, such as food, housing, transport and medical care, and compares their cost from one period to the next. Because the basket is a sample, the index estimates the average household experience rather than giving a precise measure of any one person's costs.</p>
+<h2>What inflation measures</h2>
+<p>A price index is built by collecting prices for many items, weighting each one by its share of typical spending, and tracking the weighted total over time. If the index rises from 100 to 104 over a year, the typical basket costs 4 percent more than it did a year earlier. Statistical agencies update the weights periodically, which is why an index can change its composition even when the goods themselves look similar.</p>
+<p>Two common measures are headline inflation, which covers all items, and core inflation, which excludes volatile categories such as energy and fresh food. Core measures help reveal the underlying trend, while headline measures show what households actually pay. Neither is perfect, and the right choice depends on the question being asked.</p>
+<p>Many central banks aim for a low, stable and positive rate of inflation, often around 2 percent. This is not because rising prices are desirable for households, but because a small, predictable rise is considered easier to manage than either falling prices or sudden swings.</p>
+<h2>How inflation erodes purchasing power</h2>
+<p>Suppose a person holds 10,000 in cash and inflation runs at 3 percent a year for five years. The price level rises by about 15.9 percent over that period, since 1.03 to the fifth power is about 1.159. The same 10,000 then buys roughly what 8,630 bought at the start. Nothing was lost in the bank, yet the purchasing power of the money fell.</p>
+<p>The same logic applies to income. A salary that rises by 2 percent in a year with 3 percent inflation has grown in nominal terms but shrunk in real terms. Real value is what matters for planning, because it describes how much food, housing and services the money will actually buy.</p>
+<p>Inflation also compounds. Its effect is modest in any single year but substantial over decades. Many advanced economies experienced high inflation in the 1970s and early 1980s, and households at that time saw the value of fixed savings and fixed incomes fall steadily even when the nominal balances looked stable.</p>
+<h2>Real and nominal returns</h2>
+<p>A nominal return is the headline percentage an account or investment reports. A real return removes the effect of inflation. The exact relation is shown below, where i is the nominal rate and pi is the inflation rate, both written as decimals:</p>
+<p><span data-type="inlineMath" data-latex="1+r_{\text{real}}=\frac{1+i}{1+\pi}" data-display="yes"></span></p>
+<p>For a savings account paying 4 percent when inflation is 3 percent, the real return is about 1 percent. The exact formula gives 1.04 divided by 1.03, minus 1, or about 0.97 percent. Subtracting the two rates is accurate enough for small numbers but drifts as rates grow, so the exact form is preferable for comparisons.</p>
+<h2>Inflation and fixed income</h2>
+<p>Fixed-income instruments promise set payments in nominal terms. When inflation rises unexpectedly, the real value of those payments falls, and the market price of existing bonds often adjusts downward to compensate. An investor who holds to maturity still receives the promised nominal amounts, but the real return can be lower than planned.</p>
+<p>Compounding and inflation interact in an important way. A 4 percent return compounded for ten years grows a sum substantially, yet the real gain is smaller once the price level has risen. For the mechanics of growth, see <a href="{{doc:compound-interest}}">compound interest explained</a>. For the way fixed coupons respond to changes in rates, see <a href="{{doc:bonds-and-yield}}">bonds and yield</a>.</p>
+<h2>Common misunderstandings</h2>
+<ul>
+<li>Inflation of 2 percent means prices double within two years. At that pace, prices actually double in about 35 years.</li>
+<li>Inflation affects everyone equally. Households with different spending patterns experience different price changes.</li>
+<li>Low inflation means prices are falling. It means prices are still rising, only more slowly.</li>
+<li>Cash is safe from inflation. Cash keeps its nominal value, but its purchasing power falls whenever inflation is positive.</li>
+</ul>
+<p>Another frequent error is treating one year's inflation figure as a forecast. Rates change with energy prices, supply conditions and monetary policy, so a single reading says little about the next decade.</p>
+<h2>A cautionary note</h2>
+<blockquote>
+<p>Published inflation figures are averages across a basket of goods. Personal budgets, loans and savings plans should be checked against the costs a household actually faces, particularly for items that rise faster than the headline index, such as housing or healthcare in some regions.</p>
+</blockquote>
+<h2>Practical checks</h2>
+<ol>
+<li>Compare returns in real terms before deciding whether a savings rate is adequate.</li>
+<li>Track your own basket for a few months to see how it differs from the headline index.</li>
+<li>Revisit long-term plans, such as retirement targets, when inflation changes meaningfully.</li>
+</ol>
+<p>Inflation is a background variable in nearly every financial decision. It is best treated as an assumption to revisit regularly rather than a fixed number to plan around once.</p>
+=== risk-and-volatility ===
+title: Risk and volatility
+parent: portfolio-diversification
+---
+<p>Risk in finance is a broad word. It can mean the chance of losing money, the chance of earning less than planned, or the chance that an asset becomes hard to sell at a fair price. Volatility is the most common quantitative proxy for these risks. It measures how widely returns scatter around their average, so an asset whose returns swing more widely is treated as riskier. Volatility is useful, but it is only one lens, and it can miss important features of how losses actually happen. For how spreading holdings reduces volatility, see <a href="{{doc:portfolio-diversification}}">portfolio diversification</a>.</p>
+<h2>Volatility as a measure of dispersion</h2>
+<p>Standard deviation is the usual way to express volatility. For a series of returns r1 through rN, with mean return r-bar, the sample standard deviation is given by the expression below. Squaring the deviations makes them positive, and dividing by N minus 1 corrects for the fact that the mean is estimated from the same sample.</p>
+<p><span data-type="inlineMath" data-latex="\sigma=\sqrt{\frac{1}{N-1}\sum_{i=1}^{N}\left(r_i-\bar{r}\right)^2}" data-display="yes"></span></p>
+<p>A small example shows the mechanics. Suppose monthly returns over four months are 2 percent, minus 1 percent, 3 percent and 0 percent. The mean is 1 percent. The deviations from the mean are 1, minus 2, 2 and minus 1 percentage points, so the squared deviations sum to 10. Dividing by three gives a variance of about 3.33, and the standard deviation is about 1.83 percentage points per month.</p>
+<h2>Annualizing volatility</h2>
+<p>Daily volatility is often converted to an annual figure by multiplying by the square root of the number of trading days in a year, commonly taken as 252. This works when daily returns are roughly independent and have similar variance. For example, a daily standard deviation of 1 percent becomes about 15.9 percent per year, since the square root of 252 is about 15.87.</p>
+<p>The result also depends on the data window and on whether returns are measured in simple or logarithmic terms. A one-year window and a three-year window can give quite different numbers for the same asset, especially during periods of market stress.</p>
+<h2>Drawdowns and tail risk</h2>
+<p>Volatility treats upside and downside moves symmetrically, which many investors do not. A drawdown measures the decline from a previous peak to a later trough, and the maximum drawdown is the largest such decline over a period. An asset that falls 50 percent must rise 100 percent to recover its earlier value, so deep drawdowns carry a particular cost.</p>
+<p>Tail risk refers to the chance of extreme losses that occur far out in the distribution of returns. Two portfolios can share the same volatility yet differ sharply in how often they produce large losses. For this reason, analysts often look at the worst historical months, the depth of drawdowns, and how an asset behaved in past crises alongside standard deviation.</p>
+<h2>Computing volatility in Python</h2>
+<p>The snippet below computes annualized volatility from a short list of daily returns. It uses the sample standard deviation and the 252-day convention described above.</p>
+<pre><code class="language-python"># Annualized volatility from a list of daily returns
+import statistics
+
+def annualized_volatility(daily_returns, trading_days=252):
+    sigma_daily = statistics.stdev(daily_returns)   # sample standard deviation
+    return sigma_daily * trading_days ** 0.5        # scale by square root of time
+
+returns = [0.01, -0.004, 0.007, -0.012, 0.003]
+print(round(annualized_volatility(returns), 4))     # about 0.1408
+</code></pre>
+<p>Five observations are far too few for a meaningful estimate and are used here only to show the mechanics. Real analysis usually requires years of data.</p>
+<h2>Risk and time horizon</h2>
+<p>The meaning of risk depends on when money is needed. Funds required within a year face a different problem than funds that will not be touched for thirty years. A short horizon makes a sudden drawdown more damaging, because there is little time to wait for recovery. A long horizon can absorb several weak years, although it does not remove risk entirely and requires tolerance for uncomfortable interim losses.</p>
+<p>Many planners therefore separate goals by horizon. Money for near-term expenses is often held in cash-like instruments or short bonds (see <a href="{{doc:bonds-and-yield}}">bonds and yield</a>), where the nominal value is more stable. Money for distant goals may accept higher volatility in exchange for a higher expected return. This is a framework for thinking rather than a recipe, and the right balance depends on personal circumstances that change over time.</p>
+<h2>Limits of volatility as a risk measure</h2>
+<ul>
+<li>It penalizes upside moves as much as downside moves.</li>
+<li>It assumes returns are roughly normal, which real markets often violate.</li>
+<li>It is backward looking and can change quickly after a shift in conditions.</li>
+<li>It says little about the timing of losses or the chance of permanent impairment.</li>
+</ul>
+<p>Volatility is therefore best used as one input among several. Pairing it with drawdown statistics, scenario analysis and a clear view of the time horizon gives a fuller picture. None of these tools predicts the future, and their results depend heavily on the period studied.</p>
+=== valuation-multiples-and-dcf ===
+title: Valuation multiples and discounted cash flow
+---
+<p>Valuation tries to estimate what a business is worth, which is not the same as its current share price. Analysts use several approaches. Relative methods compare a company's price with metrics such as earnings, sales or book value across similar firms. Intrinsic methods, such as discounted cash flow, build an estimate from the cash the business is expected to generate. Both families rely on assumptions, so the result is best read as a range rather than a single number.</p>
+<h2>Price to earnings ratio</h2>
+<p>The price to earnings ratio divides the share price by earnings per share over a chosen period, usually the last twelve months or the coming year's forecast. It answers a simple question: how many units of annual earnings are investors paying for? The definition is:</p>
+<p><span data-type="inlineMath" data-latex="\text{P/E}=\frac{\text{Price per share}}{\text{Earnings per share}}" data-display="yes"></span></p>
+<p>Consider a share priced at 50 with earnings per share of 2.50. The P/E is 20, meaning investors pay 20 units of current earnings for each unit of earnings. A P/E of 20 is neither cheap nor expensive in isolation. It depends on growth expectations, interest rates, the stability of earnings and how comparable firms are priced. A high P/E often reflects expectations of faster growth, while a low P/E can reflect slower growth or a risk the market is pricing in.</p>
+<p>The ratio has limits. It is undefined when earnings are negative, it can be distorted by one-off items, and accounting choices affect reported earnings. Comparisons should use consistent definitions and similar businesses.</p>
+<h2>Other common multiples</h2>
+<ul>
+<li>EV/EBITDA compares enterprise value, which adds debt and subtracts cash, with earnings before interest, taxes, depreciation and amortization.</li>
+<li>Price to sales is useful when earnings are negative, but it ignores differences in profit margins.</li>
+<li>Price to book compares market value with accounting net assets, which suits asset-heavy businesses such as banks.</li>
+<li>Free cash flow yield divides free cash flow per share by the share price, offering a cash-based counterpart to P/E.</li>
+</ul>
+<p>Multiples are quick to compute and widely quoted, but they summarize how the market currently prices a peer group. They do not show why a business deserves a particular price, which is the job of an intrinsic method.</p>
+<h2>Discounted cash flow basics</h2>
+<p>A discounted cash flow model values a business as the present value of the cash it is expected to produce for its owners and lenders. Each future cash flow is divided by a discount rate raised to the power of the number of years until it arrives. The discount rate reflects the return required for the risk of the business, and it is often compared with the yields available on bonds (see <a href="{{doc:bonds-and-yield}}">bonds and yield</a>). Discounting is compounding run in reverse, so the logic in <a href="{{doc:compound-interest}}">compound interest explained</a> applies here as well.</p>
+<p><span data-type="inlineMath" data-latex="V_0=\sum_{t=1}^{N}\frac{CF_t}{(1+r)^t}+\frac{TV_N}{(1+r)^N}" data-display="yes"></span></p>
+<p>Here <span data-type="inlineMath" data-latex="CF_t" data-display="no"></span> is the expected cash flow in year t, <span data-type="inlineMath" data-latex="r" data-display="no"></span> is the discount rate, <span data-type="inlineMath" data-latex="N" data-display="no"></span> is the length of the explicit forecast, and <span data-type="inlineMath" data-latex="TV_N" data-display="no"></span> is the terminal value at the end of that forecast. The terminal value usually makes up a large share of the total, which is why its assumptions deserve close attention.</p>
+<h2>A simplified worked example</h2>
+<p>The example below uses illustrative figures in arbitrary currency units. Free cash flow is projected at 100 in year one and grows 10 percent a year through year five, reaching about 146. The discount rate is 9 percent. After year five, cash flow is assumed to grow at 2 percent a year indefinitely. The terminal value at year five is therefore 146 times 1.02, divided by the discount rate minus the growth rate, which is 0.07. That gives about 2,127.</p>
+<p>Discounting each year's cash flow at 9 percent gives present values that sum to about 467 for the first five years. The terminal value is discounted by five years at 9 percent, which gives about 1,383. The total estimated value is therefore about 1,850, and roughly three quarters of it comes from the terminal value. A small change in the discount rate or the terminal growth rate can move the answer considerably, which is the main lesson of this kind of model.</p>
+<h2>Sensitivity and assumptions</h2>
+<p>Because the model depends on forecasts, analysts usually test several scenarios, varying the discount rate, the growth rate and the margin assumptions to see how the value responds. The query below shows a related habit: computing a simple multiple from a dataset and filtering out cases where it is not meaningful. It uses an illustrative table and excludes companies with zero or negative earnings.</p>
+<pre><code class="language-sql">-- Trailing P/E for profitable companies in an illustrative dataset
+SELECT company,
+       price / eps_ttm AS pe_ratio
+FROM illustrative_financials
+WHERE eps_ttm &gt; 0
+ORDER BY pe_ratio;
+</code></pre>
+<p>The assumptions that matter most usually include:</p>
+<ul>
+<li>The growth rate of cash flows during the forecast period, and whether it is realistic against history and competition.</li>
+<li>The discount rate, which should reflect risk rather than the answer the analyst hopes to reach.</li>
+<li>The terminal growth rate, which in most cases should not exceed long-run growth in the economy.</li>
+<li>Capital spending and working capital needs that determine how much earnings turn into actual cash.</li>
+</ul>
+<p>Valuation is an estimate, not a measurement. Multiples and discounted cash flow are most useful together, because each exposes assumptions the other hides. Neither method guarantees that a market price will converge to the estimate, and nothing in this article should be read as guidance on buying or selling any security.</p>

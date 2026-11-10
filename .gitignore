@@ -45,3 +45,6 @@ yarn-error.log*
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+
+# Local dev runner (dev.sh): pids and logs
+.run/

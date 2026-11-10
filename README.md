@@ -44,6 +44,46 @@ cd socud-frontend && cp .env.example .env.local && npm ci && npm run dev
 
 Then open http://localhost:3001.
 
+### One-command launcher (`dev.sh`)
+
+`./dev.sh` runs the same stack from the repository root: PostgreSQL and Redis in Docker, the AI worker, the backend and the frontend as native processes (logs and PIDs in `.run/`). It never runs `docker compose down` and never removes a volume.
+
+```bash
+./dev.sh start --install     # first time: install what is missing, create the .env files (fill in the secrets it lists)
+./dev.sh start               # databases, AI worker, backend, frontend
+./dev.sh stop                # stop the apps and the databases (data volumes are kept)
+./dev.sh restart             # restart the apps (the databases stay up); takes the same flags as start
+./dev.sh status              # what is running
+./dev.sh logs backend        # follow the logs (worker|backend|frontend, default all)
+```
+
+Data commands (`start` flags, or the commands of the same name):
+
+| Flag / command | What it does |
+| --- | --- |
+| `--clean`, `./dev.sh reset` | **Wipes all data**: drops and re-creates the schema from the migrations, flushes Redis, empties `.run/logs`. Asks you to type `yes` (`-y` / `--yes` skips the question; required without a terminal). Refuses when `NODE_ENV` is `production` (any case), when `DATABASE_URL` is not localhost (the environment wins over `socud-backend/.env`; `SOCUD_ALLOW_REMOTE_WIPE=1` overrides this for a disposable remote database only), when there is no terminal and no `-y`, and when port 3000, 3002 or 8000 is held by a process `dev.sh` did not start. |
+| `--seed` | Adds the demo data unless it is already there (idempotent, no duplicates). |
+| `--reseed` | Replaces the demo data with a fresh copy (`seed:demo --reset`). |
+| `--seed-args "<args>"` | Extra `seed:demo` options, e.g. `--seed-args "--langs en --limit 12"` (implies `--seed`). The string is split on whitespace, so values with spaces are not supported. `--reset`, `--if-missing` and `--embed` are refused there: use `--reseed`, `--seed`, or `./dev.sh seed --embed` once the apps are running. `./dev.sh seed --help` lists the options. |
+| `--admin`, `./dev.sh admin` | Creates or promotes the admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`, read from `socud-backend/.env` or the environment (not the root `.env`). Skipped with a warning when unset. |
+| `--migrate`, `./dev.sh migrate` | Applies the migrations. Seeding and `--admin` apply them automatically. |
+| `--db-only` | Only PostgreSQL and Redis (the data flags above still apply). |
+| `--no-worker`, `--no-frontend` | Do not start the AI worker / the frontend. |
+| `--install` | Installs what is missing (`npm ci`, `prisma generate`, the worker virtualenv) and copies each `.env.example` to its `.env` only when that file does not exist. |
+
+```bash
+./dev.sh start --clean --seed -y           # fresh database with the demo data, no prompt
+./dev.sh start --db-only --seed --admin    # only the databases, with demo data and the admin
+./dev.sh seed --langs en --limit 12        # small English sample (only when no demo data exists)
+./dev.sh seed --reseed                     # replace the demo data
+```
+
+`./dev.sh --help` lists every option.
+
+`./dev.sh reset` stops the apps that `dev.sh` started and starts nothing. `./dev.sh start --clean` and `./dev.sh restart --clean` start the apps again afterwards.
+
+Prisma refuses `migrate reset` when it runs inside an AI coding agent, so run `reset` and `--clean` from your own terminal. If a wipe fails, the apps are already stopped and the database may be unchanged or half-reset: re-run `./dev.sh reset`, or `./dev.sh migrate`.
+
 ## Run everything in Docker
 
 Backend, frontend, PostgreSQL and Redis run as containers. The AI worker does **not**: it needs Apple's MLX (Metal), which is unavailable inside Docker, so it keeps running natively on the Mac (step 4 above) and the backend container reaches it at `http://host.docker.internal:8000`.
