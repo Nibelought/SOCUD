@@ -105,7 +105,7 @@ def test_embed_rejects_overlong_text_but_accepts_the_limit():
 
 
 def test_default_limits_match_contract():
-    s = Settings(_env_file=None)
+    s = Settings(_env_file=None, backend="mlx")
     assert (s.embedding_dim, s.max_tokens, s.max_batch_size, s.max_text_length) == (1024, 8192, 32, 32000)
     assert s.host == "127.0.0.1"
     assert s.model_name == "mlx-community/Qwen3-Embedding-4B-4bit-DWQ"

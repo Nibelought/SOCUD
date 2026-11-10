@@ -143,10 +143,8 @@ def create_app(
     return app
 
 
-app = create_app()
-
 if __name__ == "__main__":
     import uvicorn
 
     _settings = Settings()
-    uvicorn.run(app, host=_settings.host, port=_settings.port)
+    uvicorn.run(create_app(_settings), host=_settings.host, port=_settings.port)
