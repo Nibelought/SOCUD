@@ -26,8 +26,12 @@ export const MIN_TITLE_QUERY_LENGTH = 2;
 /** Default of SEARCH_MIN_SIMILARITY (cosine similarity floor for semantic hits). */
 export const DEFAULT_MIN_SIMILARITY = 0.2;
 
-/** Budget for the query embedding; on timeout the search degrades to keyword + title. */
-export const QUERY_EMBED_TIMEOUT_MS = 3000;
+/**
+ * How long the whole semantic retriever (query embedding + SQL) may take before the search
+ * answers from keyword + title alone. The embedding itself can legitimately wait behind a document
+ * batch in the single-threaded AI worker (EMBED_QUERY_TIMEOUT_MS, 10 s), keyword results must not.
+ */
+export const SEMANTIC_BUDGET_MS = 3000;
 
 /** Minimum word_similarity of the title retriever (pg_trgm default is 0.6, too strict for typos). */
 export const TITLE_SIMILARITY_THRESHOLD = 0.45;

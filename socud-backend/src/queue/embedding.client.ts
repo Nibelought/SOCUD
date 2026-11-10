@@ -4,6 +4,13 @@ import { ConfigService } from '@nestjs/config';
 /** The AI worker accepts at most this many texts per /embed call (MAX_BATCH_SIZE). */
 export const EMBED_BATCH_SIZE = 32;
 
+/**
+ * Default texts per /embed call. The MLX worker is compute-bound (~0.3–0.5 passages/s on an M1,
+ * no gain from larger batches), so small batches keep each call well under the timeout and let a
+ * query embedding slip in between document batches.
+ */
+export const DEFAULT_EMBED_BATCH_SIZE = 4;
+
 /** Error from the embedding worker. `retryable` tells the queue whether another attempt can help. */
 export class EmbeddingError extends Error {
   constructor(
@@ -30,8 +37,21 @@ export class EmbeddingClient {
     return `${base.replace(/\/+$/, '')}/embed`;
   }
 
-  private get timeoutMs(): number {
-    return Number(this.config.get<number>('EMBED_TIMEOUT_MS') ?? 60_000);
+  /** Texts per /embed call: EMBED_BATCH_SIZE, clamped to the worker's limit. */
+  get batchSize(): number {
+    const configured = Number(
+      this.config.get<number>('EMBED_BATCH_SIZE') ?? DEFAULT_EMBED_BATCH_SIZE,
+    );
+    if (!Number.isFinite(configured) || configured < 1) {
+      return DEFAULT_EMBED_BATCH_SIZE;
+    }
+    return Math.min(Math.floor(configured), EMBED_BATCH_SIZE);
+  }
+
+  private timeoutMs(isQuery: boolean): number {
+    return isQuery
+      ? Number(this.config.get<number>('EMBED_QUERY_TIMEOUT_MS') ?? 10_000)
+      : Number(this.config.get<number>('EMBED_TIMEOUT_MS') ?? 180_000);
   }
 
   private get headers(): Record<string, string> {
@@ -50,38 +70,23 @@ export class EmbeddingClient {
    */
   async embed(texts: string[], isQuery = false): Promise<number[][]> {
     const vectors: number[][] = [];
-    for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
+    const size = this.batchSize;
+    for (let i = 0; i < texts.length; i += size) {
       vectors.push(
-        ...(await this.embedBatch(
-          texts.slice(i, i + EMBED_BATCH_SIZE),
-          isQuery,
-        )),
+        ...(await this.embedBatch(texts.slice(i, i + size), isQuery)),
       );
     }
     return vectors;
   }
 
-  /**
-   * Embeds one search query (`is_query: true`) with its own, short timeout, so an interactive
-   * request is not held up by the long timeout meant for document batches.
-   */
-  async embedQuery(text: string, timeoutMs: number): Promise<number[]> {
-    const [vector] = await this.embedBatch([text], true, timeoutMs);
-    return vector;
-  }
-
-  async embedBatch(
-    texts: string[],
-    isQuery: boolean,
-    timeoutMs: number = this.timeoutMs,
-  ): Promise<number[][]> {
+  async embedBatch(texts: string[], isQuery: boolean): Promise<number[][]> {
     let res: Response;
     try {
       res = await fetch(this.url, {
         method: 'POST',
         headers: this.headers,
         body: JSON.stringify({ texts, is_query: isQuery }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(this.timeoutMs(isQuery)),
       });
     } catch (err) {
       throw new EmbeddingError(

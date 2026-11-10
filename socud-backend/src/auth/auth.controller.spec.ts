@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { AuthController, REFRESH_COOKIE_NAME } from './auth.controller';
+import {
+  AuthController,
+  REFRESH_COOKIE_NAME,
+  SESSION_COOKIE_NAME,
+} from './auth.controller';
 import { AuthService } from './auth.service';
 import { createConfigServiceMock } from '../test-utils/mocks';
 
@@ -172,6 +176,87 @@ describe('AuthController', () => {
 
     expect(authService.logout).toHaveBeenCalledWith(undefined);
     expect(res.clearCookie).toHaveBeenCalled();
+  });
+
+  describe('socud_session hint cookie (read by the web app proxy)', () => {
+    const loginResult = {
+      access_token: 'acc',
+      user: { id: 'u1', email: 'a@b.co' },
+      refresh: { token: 'raw-rt', expiresAt },
+    };
+    const dto = { email: 'a@b.co', password: 'x' };
+
+    it('is set on login: readable, lax, site-wide, same lifetime, carries no token', async () => {
+      authService.login.mockResolvedValue(loginResult);
+
+      await controller.login(dto, res as unknown as Response);
+
+      expect(res.cookie).toHaveBeenCalledWith(SESSION_COOKIE_NAME, '1', {
+        httpOnly: false,
+        sameSite: 'lax',
+        secure: false,
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    });
+
+    it('is refreshed on refresh', async () => {
+      authService.refreshTokens.mockResolvedValue({
+        access_token: 'acc2',
+        refresh: { token: 'rt2', expiresAt },
+      });
+
+      await controller.refresh(
+        reqWith({ [REFRESH_COOKIE_NAME]: 'rt1' }),
+        res as unknown as Response,
+      );
+
+      expect(res.cookie).toHaveBeenCalledWith(
+        SESSION_COOKIE_NAME,
+        '1',
+        expect.objectContaining({ httpOnly: false, path: '/' }),
+      );
+    });
+
+    it('is secure in production and honours SESSION_COOKIE_DOMAIN', async () => {
+      await build({
+        NODE_ENV: 'production',
+        SESSION_COOKIE_DOMAIN: '.example.com',
+      });
+      authService.login.mockResolvedValue(loginResult);
+
+      await controller.login(dto, res as unknown as Response);
+
+      expect(res.cookie).toHaveBeenCalledWith(
+        SESSION_COOKIE_NAME,
+        '1',
+        expect.objectContaining({ secure: true, domain: '.example.com' }),
+      );
+    });
+
+    it('is cleared on logout', async () => {
+      authService.logout.mockResolvedValue(undefined);
+
+      await controller.logout(reqWith(), res as unknown as Response);
+
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        SESSION_COOKIE_NAME,
+        expect.objectContaining({ path: '/', httpOnly: false }),
+      );
+    });
+
+    it('is cleared when refresh is rejected (so a stale hint cannot loop the UI)', async () => {
+      authService.refreshTokens.mockRejectedValue(new UnauthorizedException());
+
+      await expect(
+        controller.refresh(reqWith(), res as unknown as Response),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        SESSION_COOKIE_NAME,
+        expect.objectContaining({ path: '/' }),
+      );
+    });
   });
 
   it('searchUsers passes the requester id and fragment to the service', async () => {

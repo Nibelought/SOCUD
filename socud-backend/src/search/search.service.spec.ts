@@ -13,7 +13,7 @@ import {
   HEADLINE_START as S,
   HEADLINE_STOP as E,
   MAX_QUERY_LENGTH,
-  QUERY_EMBED_TIMEOUT_MS,
+  SEMANTIC_BUDGET_MS,
 } from './search.constants';
 import { escapeLike, SearchService } from './search.service';
 
@@ -60,7 +60,7 @@ function sqlText(strings: ArrayLike<string>, values: unknown[]): string {
 describe('SearchService', () => {
   let service: SearchService;
   let prisma: jest.Mocked<PrismaService>;
-  let embeddings: { embedQuery: jest.Mock };
+  let embeddings: { embed: jest.Mock };
   let hits: Record<Kind, unknown[] | Error>;
   let docs: Array<{ id: string; title: string; space: { name: string } }>;
   let warn: jest.SpyInstance;
@@ -73,7 +73,7 @@ describe('SearchService', () => {
   beforeEach(async () => {
     hits = { semantic: [], keyword: [], title: [] };
     docs = [];
-    embeddings = { embedQuery: jest.fn().mockResolvedValue([0.5, 0.25]) };
+    embeddings = { embed: jest.fn().mockResolvedValue([[0.5, 0.25]]) };
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
     const moduleRef = await Test.createTestingModule({
@@ -117,7 +117,7 @@ describe('SearchService', () => {
     await expect(service.search(USER, '')).resolves.toEqual([]);
     await expect(service.search(USER, '   ')).resolves.toEqual([]);
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
-    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(embeddings.embed).not.toHaveBeenCalled();
   });
 
   it('fuses the three retrievers, keeps the response shape and uses the space name', async () => {
@@ -199,9 +199,7 @@ describe('SearchService', () => {
     });
 
     it('falls back to keyword + title when the query embedding fails', async () => {
-      embeddings.embedQuery.mockRejectedValue(
-        new Error('AI worker unreachable'),
-      );
+      embeddings.embed.mockRejectedValue(new Error('AI worker unreachable'));
       const results = await service.search(USER, 'secret query text');
       expect(results.map((r) => r.id)).toEqual(['a']);
       expect(calls('semantic')).toHaveLength(0);
@@ -227,19 +225,28 @@ describe('SearchService', () => {
     });
 
     it('throws only if every retriever failed', async () => {
-      embeddings.embedQuery.mockRejectedValue(new Error('down'));
+      embeddings.embed.mockRejectedValue(new Error('down'));
       hits.keyword = new Error('db down');
       hits.title = new Error('db down');
       await expect(service.search(USER, 'q1')).rejects.toThrow('down');
     });
 
-    it('uses a short embedding timeout for queries', async () => {
+    it('embeds the query with is_query=true through the shared client', async () => {
       await service.search(USER, 'q1');
-      expect(embeddings.embedQuery).toHaveBeenCalledWith(
-        'q1',
-        QUERY_EMBED_TIMEOUT_MS,
-      );
-      expect(QUERY_EMBED_TIMEOUT_MS).toBeLessThanOrEqual(5000);
+      expect(embeddings.embed).toHaveBeenCalledWith(['q1'], true);
+    });
+
+    it('does not make keyword results wait for a slow embedding', async () => {
+      jest.useFakeTimers();
+      try {
+        embeddings.embed.mockReturnValue(new Promise(() => undefined));
+        const pending = service.search(USER, 'q1');
+        await jest.advanceTimersByTimeAsync(SEMANTIC_BUDGET_MS + 1);
+        await expect(pending).resolves.toHaveLength(1);
+        expect(SEMANTIC_BUDGET_MS).toBeLessThanOrEqual(5000);
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 
@@ -338,7 +345,7 @@ describe('SearchService', () => {
 
     it('cuts over-long queries', async () => {
       await service.search(USER, 'x'.repeat(MAX_QUERY_LENGTH * 3));
-      expect(embeddings.embedQuery.mock.calls[0][0]).toHaveLength(
+      expect(embeddings.embed.mock.calls[0][0][0]).toHaveLength(
         MAX_QUERY_LENGTH,
       );
     });

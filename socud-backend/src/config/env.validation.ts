@@ -81,7 +81,22 @@ export class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
   @Min(1000)
-  EMBED_TIMEOUT_MS: number = 60000;
+  EMBED_TIMEOUT_MS: number = 180000;
+
+  /** Timeout of a search-query /embed call, in ms. Short: search falls back to keyword results. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  EMBED_QUERY_TIMEOUT_MS: number = 10000;
+
+  /** Texts per /embed call when embedding documents (the worker accepts at most 32). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(32)
+  EMBED_BATCH_SIZE: number = 4;
 
   /**
    * Search: semantic hits with a cosine similarity below this are dropped (the nearest chunks are
@@ -120,6 +135,24 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(0)
   EMBED_RECONCILE_INTERVAL_MS: number = 600000;
+
+  /**
+   * Serves Swagger UI at /api/docs and the OpenAPI JSON at /api/docs-json.
+   * Unset: enabled unless NODE_ENV=production (see `isSwaggerEnabled`).
+   */
+  @IsOptional()
+  @Transform(toBoolean)
+  @IsBoolean()
+  SWAGGER_ENABLED?: boolean;
+
+  /**
+   * Optional `Domain` attribute of the `socud_session` hint cookie, needed only when the web app and
+   * the API live on different subdomains (e.g. `.example.com`). Unset: host-only cookie.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  SESSION_COOKIE_DOMAIN?: string;
 
   /** Minimum interval between access re-validations of one Hocuspocus connection, in ms. */
   @IsOptional()

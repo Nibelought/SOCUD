@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "api:gen": "openapi-typescript ../socud-backend/openapi.json -o src/lib/api/schema.d.ts"
   },
   "engines": {
     "node": ">=20.9"
@@ -32,6 +33,7 @@
     "lowlight": "^3.3.0",
     "lucide-react": "^1.14.0",
     "next": "16.2.4",
+    "openapi-fetch": "^0.17.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-force-graph-2d": "^1.29.1",
@@ -49,6 +51,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "jsdom": "^26.1.0",
+    "openapi-typescript": "^7.13.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.7"

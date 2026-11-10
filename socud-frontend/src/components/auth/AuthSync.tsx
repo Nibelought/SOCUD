@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { getAccessToken, isTokenExpired, clearTokens, refreshAccessToken, TOKEN_KEY } from '@/lib/auth';
+import { getAccessToken, isTokenExpired, clearTokens, refreshAccessToken, TOKEN_KEY, sessionLostLoginUrl } from '@/lib/auth';
 
 const PUBLIC_PATHS = ['/login', '/register'];
 
@@ -22,7 +22,7 @@ export default function AuthSync() {
                 refreshAccessToken().then((token) => {
                     if (cancelled || token) return;
                     clearTokens();
-                    router.push('/login');
+                    router.push(sessionLostLoginUrl());
                 });
             }
         }
@@ -33,7 +33,7 @@ export default function AuthSync() {
             if (e.key === TOKEN_KEY && !e.newValue) {
                 // Пользователь вышел в другой вкладке → выходим здесь
                 clearTokens();
-                router.push('/login');
+                router.push(sessionLostLoginUrl());
             }
         };
 

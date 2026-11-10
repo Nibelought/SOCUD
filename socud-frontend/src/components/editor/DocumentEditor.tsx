@@ -27,7 +27,8 @@ import AccessManagerModal from '@/components/modals/AccessManagerModal';
 import LatexEditorModal from "@/components/editor/LatexEditorModal"
 
 import { common, createLowlight } from 'lowlight';
-import { API_URL, WS_URL } from "@/lib/config";
+import { WS_URL } from "@/lib/config";
+import { api } from "@/lib/api/client";
 import { isSafeHref, SAFE_LINK_PROTOCOLS } from "@/lib/security";
 const lowlight = createLowlight(common);
 
@@ -534,15 +535,12 @@ const EditorInner = ({ provider, ydoc, userName, userColor, activeUsers, current
         if (!editor) return;
         const html = editor.getHTML();
         try {
-            const token = localStorage.getItem("socud_token");
             const docId = provider.configuration.name;
-            const res = await fetch(`${API_URL}/document/${docId}/publish`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-                body: JSON.stringify({ html }),
+            const { data, response } = await api.POST("/document/{id}/publish", {
+                params: { path: { id: docId } },
+                body: { html },
             });
-            if (!res.ok) throw new Error("Failed to publish");
-            const data = await res.json();
+            if (!response.ok || !data) throw new Error("Failed to publish");
             alert(`Published! Extracted links: ${data.extractedLinksCount}`);
         } catch (error) {
             console.error(error);

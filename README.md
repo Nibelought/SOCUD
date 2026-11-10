@@ -9,7 +9,7 @@ SOCUD is a collaborative knowledge base and a Confluence alternative. Teams orga
 | `socud-frontend` | Next.js 16, React 19, Tiptap, Yjs | 3001 |
 | `socud-backend` (REST) | NestJS 11, Prisma 7 | 3000 |
 | `socud-backend` (WebSocket) | Hocuspocus (collaborative editing) | 3002 |
-| `socud-ai-worker` | FastAPI, sentence-transformers (`intfloat/multilingual-e5-base`, 768-dim) | 8000 |
+| `socud-ai-worker` | FastAPI, MLX (`Qwen3-Embedding-4B-4bit-DWQ`, 1024-dim), native on Apple Silicon | 8000 |
 | PostgreSQL (`docker-compose.yml`) | PostgreSQL 18 + pgvector | 5432 |
 
 REST and WebSocket (Hocuspocus) run in the same NestJS process.
@@ -17,7 +17,7 @@ REST and WebSocket (Hocuspocus) run in the same NestJS process.
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`; `nvm use` picks it up). The backend needs Node >= 20.19, the frontend >= 20.9.
-- Python 3.12
+- Python 3.12 or newer (the AI worker is developed on 3.14) on an Apple Silicon Mac (MLX; the worker does not run in Docker or on Intel/Linux)
 - Docker (for PostgreSQL with pgvector)
 
 ## Quick start
@@ -35,7 +35,7 @@ docker compose up -d
 # 3. Backend: start (REST on 3000, WebSocket on 3002)
 cd socud-backend && npm run start:dev
 
-# 4. AI worker (the ~1 GB model downloads on first start)
+# 4. AI worker, natively on the Mac (the ~2.3 GB model downloads on first start; see "AI worker" below)
 cd socud-ai-worker && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python main.py
 
 # 5. Frontend
@@ -80,6 +80,25 @@ It is idempotent: an existing admin is left untouched; an existing non-admin use
 
 The backend logs JSON through pino (`nestjs-pino`): one line per request with a request id (`X-Request-Id` is reused when well-formed, otherwise generated, and echoed in the response), `Authorization`, cookies, `X-Worker-Token`, and password/token fields are redacted. Set `LOG_LEVEL` (default `info` in production, `debug` in development). Output is pretty-printed only with `NODE_ENV=development`. Sentry (`@sentry/nestjs`) is enabled only when `SENTRY_DSN` is set and sends no cookies, headers, bodies, or user data. Frontend Sentry is not set up yet.
 
+### API documentation (OpenAPI)
+
+The backend documents its REST API with `@nestjs/swagger`. Swagger UI is served at `/api/docs` and the JSON at `/api/docs-json` when `NODE_ENV` is not `production`; set `SWAGGER_ENABLED=true|false` to override either way (the relaxed Content-Security-Policy that Swagger UI needs applies to those two routes only). The Hocuspocus WebSocket is not part of the document.
+
+The committed `socud-backend/openapi.json` is the contract, and the frontend's typed client (`openapi-typescript` types + `openapi-fetch`) is generated from it. After changing any controller or DTO, regenerate both, in this order, and commit the results (CI fails when they are stale):
+
+```bash
+cd socud-backend && npm run openapi:export   # builds in Nest preview mode: needs no database or Redis
+cd ../socud-frontend && npm run api:gen      # writes src/lib/api/schema.d.ts
+```
+
+Response types are classes in `*-response.dto.ts` files; the Nest CLI plugin (configured in `nest-cli.json`) derives request-DTO schemas from `class-validator` decorators and TypeScript types, which is why the export goes through `nest build`.
+
+### Sessions and route protection
+
+Besides the httpOnly `socud_refresh` cookie (scoped to path `/auth`, so the web app's server never sees it), login and refresh set a readable `socud_session=1` hint cookie (path `/`, SameSite=Lax, same lifetime; cleared on logout and on a rejected refresh). The Next.js proxy (`socud-frontend/src/proxy.ts`; Next 16's name for `middleware`) uses it to redirect signed-out visitors of `/dashboard`, `/space`, `/document` and `/graph` to `/login?next=<path>` and signed-in users away from `/login` and `/register`. `next` is accepted only as a same-origin relative path. This is a UX convenience, not a security boundary: the hint is forgeable and every API call is authenticated by the backend.
+
+Cookies are not scoped by port, so `localhost:3001` (web) and `localhost:3000` (API) share them. If web and API live on different subdomains in production, set `SESSION_COOKIE_DOMAIN` (for example `.example.com`) in the backend; on unrelated domains the hint can never reach the web app, so set `SESSION_REDIRECTS=off` for the frontend to disable the redirects. Sessions created before this feature have no hint cookie and need one fresh login.
+
 Before step 1, set `POSTGRES_PASSWORD` in the root `.env` (for example `openssl rand -hex 24`). Before step 3, edit `socud-backend/.env`: set `JWT_SECRET` to a random string of at least 32 characters (`openssl rand -hex 32`) and make `DATABASE_URL` match the root `.env` (`postgresql://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>`). The `DATABASE_URL` in `socud-backend/.env.example` still contains the old default password `check-socud`, so it must be changed. The backend refuses to start if a required variable is missing or invalid.
 
 An existing database volume keeps the password it was created with: `POSTGRES_PASSWORD` is applied only when the volume is first initialised. If you already have data from an earlier version, set `POSTGRES_PASSWORD=check-socud` (the old default) in the root `.env`, or change the password inside the database with `ALTER USER` and use the new one in both files.
@@ -118,6 +137,8 @@ Each service ships an example file: `.env.example` (root, for Docker Compose), `
 | `CORS_ORIGIN` | no | `http://localhost:3001` | Allowed origin(s); comma-separated list allowed |
 | `NODE_ENV` | no | `development` | `development`, `production`, or `test` |
 | `LOG_LEVEL` | no | `info` (production), `debug` (development) | pino level: `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
+| `SWAGGER_ENABLED` | no | on unless `NODE_ENV=production` | Serve Swagger UI at `/api/docs` and JSON at `/api/docs-json` |
+| `SESSION_COOKIE_DOMAIN` | no | none (host-only) | `Domain` of the `socud_session` hint cookie; only for web and API on different subdomains |
 | `SENTRY_DSN` | no | none | Enables Sentry error reporting when set |
 | `SENTRY_TRACES_SAMPLE_RATE` | no | `0` | Fraction (0..1) of requests traced |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | seed only | none | Read by `npm run db:seed` only |
@@ -131,14 +152,32 @@ Both variables are inlined at build time, so rebuild after changing them.
 | `NEXT_PUBLIC_API_URL` | no | `http://localhost:3000` | Backend REST URL |
 | `NEXT_PUBLIC_WS_URL` | no | `ws://127.0.0.1:3002` | Backend WebSocket URL |
 
+Runtime-only (read by the proxy, not inlined): `SESSION_REDIRECTS=off` disables the session redirects (see "Sessions and route protection").
+
 ### AI worker (`socud-ai-worker/.env`, optional)
+
+The worker computes embeddings with `mlx-community/Qwen3-Embedding-4B-4bit-DWQ` using [MLX](https://github.com/ml-explore/mlx), so it runs natively on an Apple Silicon Mac. MLX has no Metal access inside Docker, so it is not containerized; containers reach it at `http://host.docker.internal:8000`. This works with the default loopback bind on OrbStack (verified); other Docker runtimes may need `HOST=0.0.0.0` (unverified), in which case also set `WORKER_TOKEN` and keep the port off the network. Embeddings are 1024-dimensional (Matryoshka-truncated, L2-normalised), last-token pooled; queries get the `Instruct: ...\nQuery:` prefix, documents do not.
+
+```bash
+cd socud-ai-worker
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python main.py        # http://127.0.0.1:8000
+```
+
+The first start downloads the model (about 2.3 GB) into `~/.cache/huggingface`. The port opens immediately; `GET /health` returns 503 `{"status":"loading"}` until the model is ready, then 200 `{"status":"ok","model":...,"dim":1024,"device":"mlx"}`. With the model loaded the worker needs roughly 3 to 5 GB of memory. To verify a running worker end to end (dimension, norm, Russian/English retrieval), run `python scripts/smoke_test.py`.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `MODEL_NAME` | no | `intfloat/multilingual-e5-base` | Sentence-transformers model |
+| `MODEL_NAME` | no | `mlx-community/Qwen3-Embedding-4B-4bit-DWQ` | MLX checkpoint (Hugging Face id) |
+| `EMBEDDING_DIM` | no | `1024` | Output dimension (first N components, renormalised); must match the backend's `vector(1024)` column |
+| `MAX_TOKENS` | no | `8192` | Longer texts are truncated to this many tokens, not rejected |
+| `QUERY_INSTRUCTION` | no | `Given a search query, retrieve relevant passages from a knowledge base that answer the query` | Task text placed in the query prefix; documents get none |
 | `MAX_BATCH_SIZE` | no | `32` | Maximum texts per `/embed` request |
-| `MAX_TEXT_LENGTH` | no | `15000` | Maximum characters per text |
-| `INFERENCE_BATCH_SIZE` | no | `16` | Internal inference batch size |
+| `MAX_TEXT_LENGTH` | no | `32000` | Maximum characters per text (longer: HTTP 422) |
+| `DTYPE` | no | `float16` | Compute dtype, `float16` or `bfloat16` (float16 is faster on M1; embeddings differ by cosine >= 0.9998) |
+| `INFERENCE_BATCH_SIZE` | no | `8` | Maximum texts per forward pass |
+| `INFERENCE_TOKEN_BUDGET` | no | `16384` | Maximum padded tokens (batch size x longest text) per forward pass |
 | `HOST` | no | `127.0.0.1` | Bind address (loopback; change only together with `WORKER_TOKEN` and a firewall or internal network) |
 | `PORT` | no | `8000` | Bind port |
 | `WORKER_TOKEN` | no | none | If set, `POST /embed` requires the header `X-Worker-Token: <value>` (`/health` stays open); set the same value as `AI_WORKER_TOKEN` in the backend |
@@ -152,14 +191,16 @@ Both variables are inlined at build time, so rebuild after changing them.
 | `socud-backend` | `npm test` | Unit tests (no database needed) |
 | `socud-backend` | `npm run test:e2e` | End-to-end tests (requires running PostgreSQL) |
 | `socud-backend` | `npm run build` | Production build |
+| `socud-backend` | `npm run openapi:export` | Rebuild and write `openapi.json` (no database or Redis needed) |
 | `socud-backend` | `npm run db:seed` | Create the first admin (see "First admin") |
+| `socud-frontend` | `npm run api:gen` | Regenerate `src/lib/api/schema.d.ts` from `../socud-backend/openapi.json` |
 | `socud-frontend` | `npm run lint` | ESLint |
 | `socud-frontend` | `npm run typecheck` | TypeScript check |
 | `socud-frontend` | `npm test` | Unit tests (Vitest) |
 | `socud-frontend` | `npm run build` | Production build |
-| `socud-ai-worker` | `python -m py_compile main.py` | Syntax check |
+| `socud-ai-worker` | `pip install -r requirements-dev.txt && ruff check . && pytest` | Lint and unit tests (no model, no MLX needed) |
 
-GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker (plus a build-only job for the Docker images) on every push and pull request to `main`. The worker job runs only a syntax check and a minimal `ruff` lint, because installing its dependencies (PyTorch, model download) is too heavy for CI.
+GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker (plus a build-only job for the Docker images) on every push and pull request to `main`. The worker job installs only `requirements-dev.txt` (no MLX, which is macOS-only) and runs `ruff` and `pytest`; tests that need MLX skip themselves, and the model is never loaded in CI.
 
 ## Security model
 

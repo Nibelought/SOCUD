@@ -61,7 +61,7 @@ describe('EmbeddingClient', () => {
     });
     const texts = Array.from({ length: 70 }, (_, i) => String(i));
 
-    const out = await build().embed(texts);
+    const out = await build({ EMBED_BATCH_SIZE: 32 }).embed(texts);
 
     const sizes = fetchMock.mock.calls.map(
       (c: [string, RequestInit]) =>
@@ -69,6 +69,28 @@ describe('EmbeddingClient', () => {
     );
     expect(sizes).toEqual([32, 32, 6]);
     expect(out.map((v) => v[0])).toEqual(texts.map(Number));
+  });
+
+  it('defaults to batches of 4 and clamps EMBED_BATCH_SIZE to the worker limit of 32', () => {
+    expect(build().batchSize).toBe(4);
+    expect(build({ EMBED_BATCH_SIZE: 8 }).batchSize).toBe(8);
+    expect(build({ EMBED_BATCH_SIZE: 100 }).batchSize).toBe(32);
+    expect(build({ EMBED_BATCH_SIZE: 0 }).batchSize).toBe(4);
+  });
+
+  it('uses the short query timeout for is_query calls and the long one for documents', async () => {
+    const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+    fetchMock.mockResolvedValue(ok([[1, 0, 0, 0]]));
+    const client = build({
+      EMBED_QUERY_TIMEOUT_MS: 1234,
+      EMBED_TIMEOUT_MS: 98765,
+    });
+
+    await client.embed(['q'], true);
+    await client.embed(['d'], false);
+
+    expect(timeoutSpy.mock.calls.map((c) => c[0])).toEqual([1234, 98765]);
+    timeoutSpy.mockRestore();
   });
 
   it.each([422, 400, 401, 413])(
@@ -127,28 +149,5 @@ describe('EmbeddingClient', () => {
       new EmbeddingClient(createConfigServiceMock() as unknown as ConfigService)
         .dim,
     ).toBe(1024);
-  });
-
-  it('embedQuery sends a single is_query text with its own timeout', async () => {
-    fetchMock.mockResolvedValue(ok([vec(4)]));
-    const timeout = jest.spyOn(AbortSignal, 'timeout');
-
-    await expect(build().embedQuery('как деплоить', 2500)).resolves.toEqual(
-      vec(4),
-    );
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual({
-      texts: ['как деплоить'],
-      is_query: true,
-    });
-    expect(timeout).toHaveBeenCalledWith(2500);
-  });
-
-  it('embedQuery fails on a wrong dimension or an HTTP error', async () => {
-    fetchMock.mockResolvedValueOnce(ok([vec(3)]));
-    await expect(build().embedQuery('q', 1000)).rejects.toThrow(/dimension 3/);
-    fetchMock.mockResolvedValueOnce(fail(503));
-    await expect(build().embedQuery('q', 1000)).rejects.toThrow(/503/);
   });
 });

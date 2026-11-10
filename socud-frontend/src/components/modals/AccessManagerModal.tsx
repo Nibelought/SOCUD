@@ -3,6 +3,10 @@
 import { useState, useEffect } from "react";
 import { X, Search, ShieldAlert, Trash2, Archive, Loader2, RefreshCw, Save } from "lucide-react";
 import { API_URL } from "@/lib/config";
+import { fetchWithAuth } from "@/lib/auth";
+import { api, apiErrorMessage, type components } from "@/lib/api/client";
+
+type RoleName = components["schemas"]["Role"];
 
 interface AccessModalProps {
     isOpen: boolean;
@@ -16,7 +20,7 @@ interface AccessModalProps {
 interface Member {
     id?: string;
     userId: string;
-    role: 'OWNER' | 'EDITOR' | 'VIEWER';
+    role: RoleName;
     user: { id: string; email: string };
     source?: 'direct' | 'inherited'; // ← Новое поле
 }
@@ -35,26 +39,41 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
     const [loadingData, setLoadingData] = useState(true);
     const [actionLoading, setActionLoading] = useState<'archive' | 'restore' | 'delete' | 'save' | null>(null);
 
-    const baseUrl = `${API_URL}/${entityType}/${entityId}`;
+    // Space and document share the same shape of management endpoints; the typed client needs
+    // literal paths, so each operation branches on entityType once.
+    const isSpace = entityType === 'space';
+    const pathParams = { params: { path: { id: entityId } } };
 
     useEffect(() => {
         if (!isOpen) return;
         setLoadingData(true);
-        const token = localStorage.getItem("socud_token");
+
+        const loadEntity = async () => {
+            if (isSpace) {
+                const { data } = await api.GET('/space/{id}', { params: { path: { id: entityId } } });
+                return data && { title: data.name, description: data.description ?? "", isArchived: data.isArchived };
+            }
+            const { data } = await api.GET('/document/{id}', { params: { path: { id: entityId } } });
+            // The document view endpoint does not report archive state
+            return data && { title: data.title, description: "", isArchived: false };
+        };
+        const loadMembers = async (): Promise<Member[]> => {
+            const { data } = isSpace
+                ? await api.GET('/space/{id}/members', { params: { path: { id: entityId } } })
+                : await api.GET('/document/{id}/members', { params: { path: { id: entityId } } });
+            return Array.isArray(data) ? data : [];
+        };
 
         // Параллельная загрузка метаданных и участников
-        Promise.all([
-            fetch(baseUrl, { headers: { "Authorization": `Bearer ${token}` } }).then(res => res.json()),
-            fetch(`${baseUrl}/members`, { headers: { "Authorization": `Bearer ${token}` } }).then(res => res.json())
-        ]).then(([entityData, membersData]) => {
-            setTitle(entityData.title || entityData.name || "");
-            if (entityType === 'space') setDescription(entityData.description || "");
-            setIsArchived(entityData.isArchived || false);
+        Promise.all([loadEntity(), loadMembers()]).then(([entityData, membersData]) => {
+            setTitle(entityData?.title ?? "");
+            if (isSpace) setDescription(entityData?.description ?? "");
+            setIsArchived(entityData?.isArchived ?? false);
 
-            if (Array.isArray(membersData)) setMembers(membersData);
+            setMembers(membersData);
         }).catch(err => console.error("Error fetching modal data", err))
             .finally(() => setLoadingData(false));
-    }, [isOpen, baseUrl, entityType]);
+    }, [isOpen, entityId, isSpace]);
 
     // Поиск пользователей с debounce
     useEffect(() => {
@@ -63,11 +82,8 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
             return;
         }
         const delay = setTimeout(async () => {
-            const token = localStorage.getItem("socud_token");
-            const res = await fetch(`${API_URL}/auth/users/search?email=${encodeURIComponent(searchEmail)}`, {
-                headers: { "Authorization": `Bearer ${token}` }
-            });
-            if (res.ok) setSearchResults(await res.json());
+            const { data } = await api.GET('/auth/users/search', { params: { query: { email: searchEmail } } });
+            if (data) setSearchResults(data);
         }, 400);
         return () => clearTimeout(delay);
     },[searchEmail]);
@@ -75,64 +91,42 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
     // Сохранение метаданных (Название и Описание)
     const handleSaveMetadata = async () => {
         setActionLoading('save');
-        const token = localStorage.getItem("socud_token");
 
-        const payload: any = entityType === 'space'
-            ? { title, description } // space.service.ts сам преобразует title → name
-            : { title };             // document.service.ts ожидает title
-
-        const res = await fetch(baseUrl, {
-            method: 'PATCH',
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-            body: JSON.stringify(payload)
-        });
+        const { response } = isSpace
+            ? await api.PATCH('/space/{id}', { ...pathParams, body: { title, description } }) // space.service.ts сам преобразует title → name
+            : await api.PATCH('/document/{id}', { ...pathParams, body: { title } });         // document.service.ts ожидает title
 
         setActionLoading(null);
-        if (!res.ok) alert("Failed to save changes. Check permissions.");
-    };
-
-    // Текст ошибки из JSON-ответа бэкенда ({ message }); message может быть строкой или массивом.
-    const errorMessageFrom = async (res: Response, fallback: string) => {
-        try {
-            const body = await res.json();
-            if (Array.isArray(body?.message)) return body.message.join("\n");
-            if (typeof body?.message === "string" && body.message) return body.message;
-        } catch {
-            // тело не JSON
-        }
-        return fallback;
+        if (!response.ok) alert("Failed to save changes. Check permissions.");
     };
 
     const handleUpdateRole = async (userId: string, role: string) => {
-        const token = localStorage.getItem("socud_token");
-        const res = await fetch(`${baseUrl}/members`, {
-            method: 'POST',
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-            body: JSON.stringify({ userId, role })
-        });
+        const body = { userId, role: role as RoleName };
+        const { response, error } = isSpace
+            ? await api.POST('/space/{id}/members', { ...pathParams, body })
+            : await api.POST('/document/{id}/members', { ...pathParams, body });
 
-        if (!res.ok) {
-            alert(await errorMessageFrom(res, "Failed to update role."));
+        if (!response.ok) {
+            alert(apiErrorMessage(error, "Failed to update role.", "\n"));
             return;
         }
 
         setMembers(prev => {
             const exists = prev.find(m => m.userId === userId);
-            if (exists) return prev.map(m => m.userId === userId ? { ...m, role: role as any } : m);
-            return[...prev, { userId, role: role as any, user: searchResults.find(u => u.id === userId)! }];
+            if (exists) return prev.map(m => m.userId === userId ? { ...m, role: role as RoleName } : m);
+            return[...prev, { userId, role: role as RoleName, user: searchResults.find(u => u.id === userId)! }];
         });
         setSearchEmail("");
     };
 
     const handleRemoveMember = async (userId: string) => {
-        const token = localStorage.getItem("socud_token");
-        const res = await fetch(`${baseUrl}/members/${userId}`, {
-            method: 'DELETE',
-            headers: { "Authorization": `Bearer ${token}` }
-        });
+        const params = { params: { path: { id: entityId, userId } } };
+        const { response, error } = isSpace
+            ? await api.DELETE('/space/{id}/members/{userId}', params)
+            : await api.DELETE('/document/{id}/members/{userId}', params);
 
-        if (!res.ok) {
-            alert(await errorMessageFrom(res, "Failed to remove member."));
+        if (!response.ok) {
+            alert(apiErrorMessage(error, "Failed to remove member.", "\n"));
             return;
         }
 
@@ -142,10 +136,11 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
     const handleArchiveEntity = async () => {
         if (!confirm(`Archive this ${entityType}? It will be hidden from viewers.`)) return;
         setActionLoading('archive');
-        const token = localStorage.getItem("socud_token");
-        const res = await fetch(`${baseUrl}/archive`, { method: 'POST', headers: { "Authorization": `Bearer ${token}` } });
+        const { response } = isSpace
+            ? await api.POST('/space/{id}/archive', pathParams)
+            : await api.POST('/document/{id}/archive', pathParams);
         setActionLoading(null);
-        if (res.ok) {
+        if (response.ok) {
             setIsArchived(true);
             onDeleteSuccess(); // Редирект или обновление UI
         } else alert("Failed to archive. Requires OWNER permissions.");
@@ -153,8 +148,10 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
 
     const handleRestoreEntity = async () => {
         setActionLoading('restore');
-        const token = localStorage.getItem("socud_token");
-        const res = await fetch(`${baseUrl}/restore`, { method: 'POST', headers: { "Authorization": `Bearer ${token}` } });
+        // NOTE: the backend has no POST /space|document/:id/restore route yet (the services have
+        // restoreSpace/restoreDocument), so it is absent from the OpenAPI document and this call stays
+        // untyped. It still gets the bearer token and refresh-on-401 through fetchWithAuth.
+        const res = await fetchWithAuth(`${API_URL}/${entityType}/${entityId}/restore`, { method: 'POST' });
         setActionLoading(null);
         if (res.ok) {
             setIsArchived(false);
@@ -165,10 +162,11 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
     const handleDeleteEntity = async () => {
         if (!confirm(`PERMANENTLY delete this ${entityType}? This action cannot be undone.`)) return;
         setActionLoading('delete');
-        const token = localStorage.getItem("socud_token");
-        const res = await fetch(baseUrl, { method: 'DELETE', headers: { "Authorization": `Bearer ${token}` } });
+        const { response } = isSpace
+            ? await api.DELETE('/space/{id}', pathParams)
+            : await api.DELETE('/document/{id}', pathParams);
         setActionLoading(null);
-        if (res.ok) {
+        if (response.ok) {
             onClose();
             onDeleteSuccess();
         } else alert("Failed to delete. Requires OWNER permissions.");

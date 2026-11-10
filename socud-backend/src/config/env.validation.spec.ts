@@ -179,3 +179,23 @@ describe('validateEnv SEARCH_MIN_SIMILARITY', () => {
     ).toThrow();
   });
 });
+
+describe('validateEnv Swagger / session cookie settings', () => {
+  it('leaves SWAGGER_ENABLED and SESSION_COOKIE_DOMAIN unset by default', () => {
+    const env = validateEnv(base);
+    expect(env.SWAGGER_ENABLED).toBeUndefined();
+    expect(env.SESSION_COOKIE_DOMAIN).toBeUndefined();
+  });
+
+  it('parses SWAGGER_ENABLED from strings ("false" is false, not truthy)', () => {
+    expect(
+      validateEnv({ ...base, SWAGGER_ENABLED: 'false' }).SWAGGER_ENABLED,
+    ).toBe(false);
+    expect(
+      validateEnv({ ...base, SWAGGER_ENABLED: 'true' }).SWAGGER_ENABLED,
+    ).toBe(true);
+    expect(() => validateEnv({ ...base, SWAGGER_ENABLED: 'maybe' })).toThrow(
+      /SWAGGER_ENABLED/,
+    );
+  });
+});

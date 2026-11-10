@@ -11,9 +11,9 @@ import {
   HEADLINE_STOP,
   MAX_QUERY_LENGTH,
   MIN_TITLE_QUERY_LENGTH,
-  QUERY_EMBED_TIMEOUT_MS,
   RESULT_LIMIT,
   RETRIEVER_LIMIT,
+  SEMANTIC_BUDGET_MS,
   SEMANTIC_CHUNK_CANDIDATES,
   TITLE_SIMILARITY_THRESHOLD,
 } from './search.constants';
@@ -30,6 +30,19 @@ import type {
 /** Escapes `\`, `%` and `_` so user input is matched literally by (I)LIKE. */
 export function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/** Rejects after `ms` so a slow retriever cannot hold the others up; late results are discarded. */
+function withBudget<T>(promise: Promise<T>, ms: number): Promise<T> {
+  promise.catch(() => undefined); // an abandoned retriever must not become an unhandled rejection
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`semantic retriever exceeded ${ms} ms`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -72,7 +85,7 @@ export class SearchService {
     if (!query) return [];
 
     const [semantic, keyword, title] = await Promise.allSettled([
-      this.semanticHits(userId, query),
+      withBudget(this.semanticHits(userId, query), SEMANTIC_BUDGET_MS),
       this.keywordHits(userId, query),
       this.titleHits(userId, query),
     ]);
@@ -162,10 +175,7 @@ export class SearchService {
     userId: string,
     query: string,
   ): Promise<SemanticHit[]> {
-    const vector = await this.embeddings.embedQuery(
-      query,
-      QUERY_EMBED_TIMEOUT_MS,
-    );
+    const [vector] = await this.embeddings.embed([query], true);
     const literal = `[${vector.join(',')}]`;
     const access = this.permissions.accessibleDocumentsSql(userId, 'd');
 

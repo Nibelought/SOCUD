@@ -4,13 +4,10 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, ArrowLeft, Loader2 } from "lucide-react";
-import {fetchWithAuth} from "@/lib/auth";
-import { API_URL } from "@/lib/config";
+import { api, apiErrorMessage, type components } from "@/lib/api/client";
+import { sessionLostLoginUrl } from "@/lib/auth";
 
-interface Space {
-    id: string;
-    name: string;
-}
+type Space = components["schemas"]["SpaceWithCountDto"];
 
 export default function CreateDocumentPage() {
     const router = useRouter();
@@ -24,13 +21,12 @@ export default function CreateDocumentPage() {
     useEffect(() => {
         const fetchSpaces = async () => {
             const token = localStorage.getItem("socud_token");
-            if (!token) return router.push("/login");
+            if (!token) return router.push(sessionLostLoginUrl());
 
             try {
-                const res = await fetchWithAuth(`${API_URL}/space/my`);
-                if (!res.ok) throw new Error("Failed to load spaces");
+                const { data, response } = await api.GET("/space/my");
+                if (!response.ok || !data) throw new Error("Failed to load spaces");
 
-                const data = await res.json();
                 setSpaces(data);
                 if (data.length > 0) setSpaceId(data[0].id); // Выбираем первое по умолчанию
             } catch (err: any) {
@@ -50,18 +46,14 @@ export default function CreateDocumentPage() {
 
         try {
             // POST запрос к DocumentModule (из твоей Фазы 1: dto.title, dto.spaceId)
-            const res = await fetchWithAuth(`${API_URL}/document`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ title, spaceId }),
+            const { data: doc, error } = await api.POST("/document", {
+                body: { title, spaceId },
             });
 
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.message || "Failed to create document");
+            if (!doc) {
+                throw new Error(apiErrorMessage(error, "Failed to create document"));
             }
 
-            const doc = await res.json();
             // Перенаправляем сразу в редактор свежесозданного документа
             router.push(`/document/${doc.id}`);
         } catch (err: any) {
