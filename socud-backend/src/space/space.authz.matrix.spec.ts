@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { SpaceService } from './space.service';
+import { PermissionService } from '../permission/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createPrismaServiceMock } from '../test-utils/mocks';
 
@@ -106,6 +107,7 @@ describe('Space authorization matrix', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         SpaceService,
+        PermissionService,
         { provide: PrismaService, useValue: createPrismaServiceMock() },
       ],
     }).compile();

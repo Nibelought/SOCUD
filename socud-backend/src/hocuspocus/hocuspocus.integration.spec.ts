@@ -1,6 +1,6 @@
 /**
  * Integration test: a real Hocuspocus server (random port) and real HocuspocusProvider clients.
- * Only the database layer (PrismaService, DocumentService.verifyDocumentAccess) is mocked.
+ * Only the database layer (PrismaService, PermissionService.resolveDocumentRole) is mocked.
  */
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -65,14 +65,15 @@ jest.mock('crossws/adapters/node', () => {
   };
 });
 
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { Role } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
 import * as Y from 'yjs';
-import { DocumentService } from '../document/document.service';
+import { PermissionService } from '../permission/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createConfigServiceMock, TEST_ENV } from '../test-utils/mocks';
+import { LiveDocumentRegistry } from '../pipeline/live-document.registry';
 import { HocuspocusService } from './hocuspocus.service';
 
 // Typical run is ~3 s in total; the generous limits only matter on a heavily loaded machine.
@@ -112,10 +113,8 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
   let prisma: {
     document: { findUnique: jest.Mock; update: jest.Mock };
   };
-  let documentService: {
-    verifyDocumentAccess: jest.Mock;
-    registerLiveStateProvider: jest.Mock;
-  };
+  let permissionService: { resolveDocumentRole: jest.Mock };
+  let liveDocuments: LiveDocumentRegistry;
 
   async function startServer(recheckMs: number) {
     const config = createConfigServiceMock({
@@ -125,8 +124,9 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
     });
     service = new HocuspocusService(
       prisma as unknown as PrismaService,
-      documentService as unknown as DocumentService,
+      permissionService as unknown as PermissionService,
       config,
+      liveDocuments,
     );
     await service.start();
   }
@@ -165,6 +165,7 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
   };
 
   beforeEach(() => {
+    liveDocuments = new LiveDocumentRegistry();
     providers = [];
     stored = null;
     roles = new Map([
@@ -181,16 +182,11 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
         }),
       },
     };
-    documentService = {
-      registerLiveStateProvider: jest.fn(),
-      verifyDocumentAccess: jest.fn(
-        (_docId: string, userId: string, required: Role[]) => {
-          const role = roles.get(userId);
-          if (!role) return Promise.reject(new NotFoundException());
-          return required.includes(role)
-            ? Promise.resolve({ id: DOC_ID })
-            : Promise.reject(new ForbiddenException());
-        },
+    permissionService = {
+      // Mirrors PermissionService.resolveDocumentRole: null role = not a member (the service
+      // then yields 403); archived/missing documents reject with NotFoundException.
+      resolveDocumentRole: jest.fn((userId: string, _docId: string) =>
+        Promise.resolve(roles.get(userId) ?? null),
       ),
     };
   });
@@ -311,12 +307,12 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
         'first store',
       );
 
-      const [provider] = documentService.registerLiveStateProvider.mock
-        .calls[0] as [(id: string) => Uint8Array | null];
-      expect(provider('unknown-doc')).toBeNull();
-      const live = new Y.Doc();
-      Y.applyUpdate(live, provider(DOC_ID)!);
-      expect(live.getText('t').toJSON()).toBe('live');
+      expect(liveDocuments.getState('unknown-doc')).toBeNull();
+      const copy = new Y.Doc();
+      Y.applyUpdate(copy, liveDocuments.getState(DOC_ID)!);
+      expect(copy.getText('t').toJSON()).toBe('live');
+      await service.stop();
+      expect(liveDocuments.getState(DOC_ID)).toBeNull();
     });
 
     it('loads the persisted state for new clients', async () => {
@@ -359,7 +355,7 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
       await startServer(60_000);
       const editor = await connect(sign(EDITOR_1));
       const callsAfterConnect =
-        documentService.verifyDocumentAccess.mock.calls.length;
+        permissionService.resolveDocumentRole.mock.calls.length;
       expect(callsAfterConnect).toBe(1);
 
       for (let i = 0; i < 50; i++) editor.text.insert(0, 'x');
@@ -368,7 +364,7 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
         'burst of edits to be persisted',
       );
 
-      expect(documentService.verifyDocumentAccess).toHaveBeenCalledTimes(
+      expect(permissionService.resolveDocumentRole).toHaveBeenCalledTimes(
         callsAfterConnect,
       );
     });
@@ -408,8 +404,8 @@ describe('HocuspocusService (integration, real WebSocket)', () => {
 
     it('closes the connection when the document disappears or is archived', async () => {
       const viewer = await connect(sign(VIEWER_1));
-      // DocumentService throws NotFoundException for archived documents.
-      documentService.verifyDocumentAccess.mockRejectedValue(
+      // PermissionService throws NotFoundException for archived documents.
+      permissionService.resolveDocumentRole.mockRejectedValue(
         new NotFoundException('Document not found'),
       );
       await waitFor(

@@ -9,9 +9,11 @@ import {
 import { getSchema } from '@tiptap/core';
 import { prosemirrorJSONToYXmlFragment } from 'y-prosemirror';
 import * as Y from 'yjs';
+import { LiveDocumentRegistry } from '../pipeline/live-document.registry';
 import { QueueService } from '../queue/queue.service';
 import { SERVER_EXTENSIONS, YJS_FRAGMENT_NAME } from '../pipeline/yjs-render';
 import { DocumentService } from './document.service';
+import { PermissionService } from '../permission/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   createConfigServiceMock,
@@ -39,13 +41,16 @@ describe('DocumentService', () => {
   let prisma: jest.Mocked<PrismaService>;
   let fetchMock: jest.SpyInstance;
   let queue: { enqueueEmbedDocument: jest.Mock };
+  let live: LiveDocumentRegistry;
 
   async function build(configOverrides: Record<string, unknown> = {}) {
     queue = { enqueueEmbedDocument: jest.fn().mockResolvedValue(true) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DocumentService,
+        PermissionService,
         { provide: QueueService, useValue: queue },
+        LiveDocumentRegistry,
         { provide: PrismaService, useValue: createPrismaServiceMock() },
         {
           provide: ConfigService,
@@ -55,6 +60,7 @@ describe('DocumentService', () => {
     }).compile();
 
     service = module.get<DocumentService>(DocumentService);
+    live = module.get(LiveDocumentRegistry);
     prisma = module.get(PrismaService);
     m(prisma.$transaction).mockImplementation((cb: (tx: unknown) => unknown) =>
       cb(prisma),
@@ -259,7 +265,7 @@ describe('DocumentService', () => {
     it('stores a version snapshot with author, number, html and Yjs state', async () => {
       allowPublish();
       const state = yjsStateOf('Snapshot me');
-      service.registerLiveStateProvider(() => state);
+      live.setSource(() => state);
 
       await service.publishDocument('doc', 'author-1', {});
 
@@ -287,7 +293,7 @@ describe('DocumentService', () => {
 
     it('renders HTML from the server-side Yjs state and ignores the client HTML', async () => {
       allowPublish();
-      service.registerLiveStateProvider(() => yjsStateOf('From the server'));
+      live.setSource(() => yjsStateOf('From the server'));
 
       await service.publishDocument('doc', 'user', {
         html: '<p>Client says otherwise</p>',
