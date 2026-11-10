@@ -137,7 +137,11 @@ describe('Document authorization matrix', () => {
       s.spaceRole ? { userId: ACTOR, spaceId: SPACE, role: s.spaceRole } : null,
     );
     m(prisma.document.create).mockResolvedValue({ id: 'new' });
-    m(prisma.document.update).mockResolvedValue({ id: DOC });
+    m(prisma.document.update).mockResolvedValue({
+      id: DOC,
+      title: 'Doc',
+      publishedVersion: 1,
+    });
     m(prisma.document.updateMany).mockResolvedValue({ count: 0 });
     m(prisma.document.delete).mockResolvedValue({ id: DOC });
     m(prisma.documentMember.upsert).mockResolvedValue({});

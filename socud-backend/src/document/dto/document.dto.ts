@@ -39,7 +39,11 @@ export class ManageDocumentMemberDto {
 }
 
 export class PublishDocumentDto {
+  /**
+   * Optional and only a fallback: Publish renders the HTML from the document's Yjs state on the
+   * server. Used (after sanitizing) only for documents that have no Yjs state yet.
+   */
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  html: string;
+  html?: string;
 }
