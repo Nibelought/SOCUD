@@ -36,8 +36,10 @@ export const DEFAULT_MIN_SIMILARITY = 0.35;
  * How long the whole semantic retriever (query embedding + SQL) may take before the search
  * answers from keyword + title alone. The embedding itself can legitimately wait behind a document
  * batch in the single-threaded AI worker (EMBED_QUERY_TIMEOUT_MS, 10 s), keyword results must not.
+ * 4 s = the measured worst case of a query embedding behind one in-flight full chunk (2.7 s with
+ * EMBED_BATCH_SIZE=1 on an M1) plus SQL and HTTP overhead.
  */
-export const SEMANTIC_BUDGET_MS = 3000;
+export const SEMANTIC_BUDGET_MS = 4000;
 
 /** Minimum word_similarity of the title retriever (pg_trgm default is 0.6, too strict for typos). */
 export const TITLE_SIMILARITY_THRESHOLD = 0.45;

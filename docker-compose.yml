@@ -93,6 +93,13 @@ services:
       AI_WORKER_URL: ${AI_WORKER_URL:-http://host.docker.internal:8000}
       AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+      # Embedding/search tuning (defaults mirror socud-backend/src/config/env.validation.ts).
+      EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-1}
+      EMBED_TIMEOUT_MS: ${EMBED_TIMEOUT_MS:-180000}
+      EMBED_QUERY_TIMEOUT_MS: ${EMBED_QUERY_TIMEOUT_MS:-10000}
+      EMBED_CONCURRENCY: ${EMBED_CONCURRENCY:-1}
+      EMBED_RECONCILE_INTERVAL_MS: ${EMBED_RECONCILE_INTERVAL_MS:-600000}
+      SEARCH_MIN_SIMILARITY: ${SEARCH_MIN_SIMILARITY:-0.35}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       SENTRY_DSN: ${SENTRY_DSN:-}
     ports:

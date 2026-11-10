@@ -71,11 +71,11 @@ describe('EmbeddingClient', () => {
     expect(out.map((v) => v[0])).toEqual(texts.map(Number));
   });
 
-  it('defaults to batches of 4 and clamps EMBED_BATCH_SIZE to the worker limit of 32', () => {
-    expect(build().batchSize).toBe(4);
+  it('defaults to batches of 1 and clamps EMBED_BATCH_SIZE to the worker limit of 32', () => {
+    expect(build().batchSize).toBe(1);
     expect(build({ EMBED_BATCH_SIZE: 8 }).batchSize).toBe(8);
     expect(build({ EMBED_BATCH_SIZE: 100 }).batchSize).toBe(32);
-    expect(build({ EMBED_BATCH_SIZE: 0 }).batchSize).toBe(4);
+    expect(build({ EMBED_BATCH_SIZE: 0 }).batchSize).toBe(1);
   });
 
   it('uses the short query timeout for is_query calls and the long one for documents', async () => {
@@ -139,9 +139,9 @@ describe('EmbeddingClient', () => {
 
   it('rejects a response with a different number of embeddings than texts', async () => {
     fetchMock.mockResolvedValue(ok([vec(4)]));
-    await expect(build().embed(['a', 'b'])).rejects.toThrow(
-      /1 embeddings for 2/,
-    );
+    await expect(
+      build({ EMBED_BATCH_SIZE: 2 }).embed(['a', 'b']),
+    ).rejects.toThrow(/1 embeddings for 2/);
   });
 
   it('defaults to 1024 dimensions', () => {

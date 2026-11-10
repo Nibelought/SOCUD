@@ -7,9 +7,9 @@ export const EMBED_BATCH_SIZE = 32;
 /**
  * Default texts per /embed call. The MLX worker is compute-bound (~0.3–0.5 passages/s on an M1,
  * no gain from larger batches), so small batches keep each call well under the timeout and let a
- * query embedding slip in between document batches.
+ * query embedding slip in between document batches. With 1, a search waits at most one chunk (~2.7 s).
  */
-export const DEFAULT_EMBED_BATCH_SIZE = 4;
+export const DEFAULT_EMBED_BATCH_SIZE = 1;
 
 /** Error from the embedding worker. `retryable` tells the queue whether another attempt can help. */
 export class EmbeddingError extends Error {

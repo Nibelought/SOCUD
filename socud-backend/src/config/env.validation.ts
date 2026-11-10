@@ -96,7 +96,7 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   @Max(32)
-  EMBED_BATCH_SIZE: number = 4;
+  EMBED_BATCH_SIZE: number = 1;
 
   /**
    * Search: semantic hits with a cosine similarity below this are dropped (the nearest chunks are
