@@ -57,7 +57,16 @@ export function createPrismaServiceMock() {
       delete: jest.fn(),
     },
     documentMember: { upsert: jest.fn(), delete: jest.fn() },
-    documentChunk: { deleteMany: jest.fn() },
+    documentChunk: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+      findMany: jest.fn(),
+    },
+    documentVersion: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+    },
     documentLink: {
       findMany: jest.fn(),
       deleteMany: jest.fn(),

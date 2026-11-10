@@ -5,6 +5,7 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import {
   Connection,
@@ -25,6 +26,8 @@ import {
 import { Role } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
 import * as Y from 'yjs';
+import { LiveDocumentRegistry } from '../pipeline/live-document.registry';
+import { renderYjsState } from '../pipeline/yjs-render';
 
 /** Per-connection context: filled by `onAuthenticate`, available in every later hook. */
 export interface HocuspocusContext {
@@ -74,6 +77,7 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
     private prisma: PrismaService,
     private permissions: PermissionService,
     private config: ConfigService,
+    @Optional() private liveDocuments?: LiveDocumentRegistry,
   ) {}
 
   async onModuleInit() {
@@ -112,6 +116,12 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
     );
     await this.server.listen();
 
+    // Publish freezes the live in-memory state, not just the last debounced save.
+    this.liveDocuments?.setSource((documentId) => {
+      const live = this.server?.hocuspocus.documents.get(documentId);
+      return live ? Y.encodeStateAsUpdate(live) : null;
+    });
+
     // Idle connections send no messages, so `beforeHandleMessage` alone would never notice that
     // their access was withdrawn (they would keep receiving other users' edits). Sweep them.
     this.sweeper = setInterval(
@@ -126,6 +136,7 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
   }
 
   async stop(): Promise<void> {
+    this.liveDocuments?.setSource(undefined);
     if (this.sweeper) clearInterval(this.sweeper);
     this.sweeper = undefined;
     const server = this.server;
@@ -218,12 +229,13 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
         try {
           // Context of the connection that made the last change.
           const updatedBy = data.lastContext?.user?.id;
-          const stateBuffer = Buffer.from(Y.encodeStateAsUpdate(data.document));
+          const state = Y.encodeStateAsUpdate(data.document);
 
           await this.prisma.document.update({
             where: { id: data.documentName },
             data: {
-              yjsState: stateBuffer,
+              yjsState: Buffer.from(state),
+              ...this.renderDraft(data.documentName, state),
               ...(updatedBy && { updatedBy }),
             },
           });
@@ -233,6 +245,25 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
         }
       },
     };
+  }
+
+  /**
+   * Draft HTML/text derived from the Yjs state. A render failure must never block saving the
+   * state itself (the source of truth), so it only skips the draft columns.
+   */
+  private renderDraft(
+    documentId: string,
+    state: Uint8Array,
+  ): { draftHtml: string; draftText: string } | Record<string, never> {
+    try {
+      const { html, text } = renderYjsState(state);
+      return { draftHtml: html, draftText: text };
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Draft render failed for doc ${documentId}: ${this.errorMessage(err)}`,
+      );
+      return {};
+    }
   }
 
   /**

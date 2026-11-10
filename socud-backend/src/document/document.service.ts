@@ -2,7 +2,9 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,17 +15,29 @@ import {
   PublishDocumentDto,
 } from './dto/document.dto';
 import { Prisma, Role } from '@prisma/client';
-import { compile } from 'html-to-text';
 import { sanitizeDocumentHtml } from '../common/html-sanitizer';
+import { chunkHtml } from '../pipeline/chunker';
+import { htmlToPlainText } from '../pipeline/html-text';
+import { extractLinkedDocumentIds } from '../pipeline/links';
+import { renderYjsState } from '../pipeline/yjs-render';
+import { LiveDocumentRegistry } from '../pipeline/live-document.registry';
 import { PermissionService } from '../permission/permission.service';
+import { QueueService } from '../queue/queue.service';
 
 @Injectable()
 export class DocumentService {
   private readonly logger = new Logger(DocumentService.name);
+  private static readonly VERSION_LIST_LIMIT = 100;
+
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
     private permissions: PermissionService,
+    // Optional so the service (and its unit tests) work without Redis wiring; publish then just
+    // does not enqueue and the reconcile job picks the document up.
+    @Optional() private queue?: QueueService,
+    // Source of the live Yjs state, filled by Hocuspocus (see LiveDocumentRegistry).
+    @Optional() private liveDocuments?: LiveDocumentRegistry,
   ) {}
 
   private get embedUrl(): string {
@@ -194,110 +208,175 @@ export class DocumentService {
     // 1. Проверка прав на запись (Только OWNER или EDITOR могут публиковать)
     await this.permissions.assertDocumentRole(userId, documentId, Role.EDITOR);
 
-    // 2. Санитизация: в БД попадает только HTML из белого списка (защита от stored XSS)
-    const html = sanitizeDocumentHtml(dto.html);
-
-    // 3. Парсинг ссылок: ищем паттерн /documents/UUID
-    // Поддерживает как относительные (/documents/uuid), так и абсолютные (http://.../documents/uuid) ссылки
-    const hrefUuidRegex =
-      /href="[^"]*?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})[^"]*?"/gi;
-
-    const linkedDocIds = new Set<string>();
-    let match;
-    while ((match = hrefUuidRegex.exec(html)) !== null) {
-      const targetId = match[1];
-      // Защита от создания ссылки на самого себя
-      if (targetId !== documentId) {
-        linkedDocIds.add(targetId);
-      }
+    // 2. Источник контента — состояние Yjs на сервере (живое или последнее сохранённое);
+    // HTML от клиента используется только если у документа ещё нет Yjs-состояния.
+    let yjsState = this.liveDocuments?.getState(documentId) ?? null;
+    if (!yjsState) {
+      const stored = await this.prisma.document.findUnique({
+        where: { id: documentId },
+        select: { yjsState: true },
+      });
+      yjsState = stored?.yjsState ?? null;
     }
-
-    const uniqueLinks = Array.from(linkedDocIds);
-    // Никогда не логируем содержимое документа
-    this.logger.log(
-      `[Publish] Doc: ${documentId} | HTML length: ${html.length} | Links: ${uniqueLinks.length}`,
+    const { html, text } = this.resolvePublishedContent(
+      documentId,
+      yjsState,
+      dto.html,
     );
 
-    // 4. Транзакционное обновление БД
-    await this.prisma.$transaction(async (prisma) => {
-      // A. Обновляем HTML контент
-      await prisma.document.update({
-        where: { id: documentId },
-        data: {
-          contentHtml: html,
-          updatedBy: userId,
-        },
-      });
+    // 3. Ссылки на другие документы (паттерн /documents/UUID) и чанки для эмбеддингов
+    const candidateLinks = extractLinkedDocumentIds(html, documentId);
+    const chunks = chunkHtml(html);
+    // Никогда не логируем содержимое документа
+    this.logger.log(
+      `[Publish] Doc: ${documentId} | HTML length: ${html.length} | Links: ${candidateLinks.length}`,
+    );
 
-      try {
-        const stripHtml = compile({ wordwrap: false });
-        const cleanText = stripHtml(html);
-
-        // Простой чанкинг по абзацам (разбиваем по переносам строк)
-        const chunks = cleanText
-          .split('\n\n')
-          .map((c) => c.trim())
-          .filter((c) => c.length > 10);
-
-        if (chunks.length > 0) {
-          // Отправляем в Python Worker
-          const aiRes = await fetch(this.embedUrl, {
-            method: 'POST',
-            headers: this.embedHeaders,
-            body: JSON.stringify({ texts: chunks, is_query: false }),
-            signal: AbortSignal.timeout(DocumentService.EMBED_TIMEOUT_MS),
-          });
-          const aiData = await aiRes.json();
-          const embeddings = aiData.embeddings;
-
-          await this.prisma.$transaction(async (prisma) => {
-            // Удаляем старые чанки
-            await prisma.documentChunk.deleteMany({ where: { documentId } });
-
-            // pgvector требует вставки через RAW SQL (так как тип Unsupported)
-            for (let i = 0; i < chunks.length; i++) {
-              const text = chunks[i];
-              // Конвертируем массив float в строку вида '[0.1, 0.2, ...]'
-              const vectorStr = `[${embeddings[i].join(',')}]`;
-
-              await prisma.$executeRaw`
-                        INSERT INTO "DocumentChunk" ("id", "documentId", "textContent", "embedding")
-                        VALUES (gen_random_uuid(), ${documentId}::uuid, ${text}, ${vectorStr}::vector)
-                    `;
-            }
-          });
-          this.logger.log(
-            `[Embed] Saved ${chunks.length} chunks for doc ${documentId}`,
-          );
-        }
-      } catch (e) {
-        this.logger.error(
-          `[Embed] Failed to vectorize doc ${documentId}: ${e.message}`,
-        );
-      }
-
-      // B. Очищаем старые связи, исходящие из этого документа
-      await prisma.documentLink.deleteMany({
-        where: { sourceDocId: documentId },
-      });
-
-      // C. Записываем новые связи
-      if (uniqueLinks.length > 0) {
-        await prisma.documentLink.createMany({
-          data: uniqueLinks.map((targetId) => ({
-            sourceDocId: documentId,
-            targetDocId: targetId,
-          })),
-          skipDuplicates: true, // Защита от дублей на уровне БД
+    // 4. Транзакция — только работа с БД (никаких сетевых вызовов): документ, версия, чанки, связи
+    const { version, links } = await this.prisma.$transaction(
+      async (tx) => {
+        const updated = await tx.document.update({
+          where: { id: documentId },
+          data: {
+            contentHtml: html,
+            draftHtml: html,
+            draftText: text,
+            updatedBy: userId,
+            publishedVersion: { increment: 1 },
+          },
+          select: { publishedVersion: true, title: true },
         });
-      }
-    });
+        const version = updated.publishedVersion;
+
+        await tx.documentVersion.create({
+          data: {
+            documentId,
+            version,
+            title: updated.title,
+            contentHtml: html,
+            yjsState: yjsState ? Buffer.from(yjsState) : undefined,
+            createdBy: userId,
+          },
+        });
+
+        // Новые чанки без эмбеддинга; вектора запишет задача embed-document
+        await tx.documentChunk.deleteMany({ where: { documentId } });
+        if (chunks.length > 0) {
+          await tx.documentChunk.createMany({
+            data: chunks.map((textContent, chunkIndex) => ({
+              documentId,
+              chunkIndex,
+              textContent,
+            })),
+          });
+        }
+
+        // Ссылка на несуществующий/удалённый документ нарушила бы FK и сорвала бы публикацию
+        const existing =
+          candidateLinks.length > 0
+            ? await tx.document.findMany({
+                where: { id: { in: candidateLinks } },
+                select: { id: true },
+              })
+            : [];
+        const links = existing.map((d) => d.id);
+
+        await tx.documentLink.deleteMany({
+          where: { sourceDocId: documentId },
+        });
+        if (links.length > 0) {
+          await tx.documentLink.createMany({
+            data: links.map((targetId) => ({
+              sourceDocId: documentId,
+              targetDocId: targetId,
+            })),
+            skipDuplicates: true, // Защита от дублей на уровне БД
+          });
+        }
+        return { version, links };
+      },
+      { timeout: 15_000 },
+    );
+
+    // 5. После коммита ставим эмбеддинг в очередь. Если Redis недоступен, публикация всё равно
+    // успешна; задачу подхватит reconcile/backfill (embeddedVersion < publishedVersion).
+    const embeddingQueued = this.queue
+      ? await this.queue.enqueueEmbedDocument({ documentId, version })
+      : false;
 
     return {
       success: true,
       message: 'Document published successfully',
-      extractedLinksCount: uniqueLinks.length,
+      version,
+      extractedLinksCount: links.length,
+      embeddingQueued,
     };
+  }
+
+  /** Published HTML/text: rendered from Yjs when there is a state, else the client HTML. */
+  private resolvePublishedContent(
+    documentId: string,
+    yjsState: Uint8Array | null,
+    clientHtml: string | undefined,
+  ): { html: string; text: string } {
+    if (yjsState) {
+      try {
+        return renderYjsState(yjsState);
+      } catch (err) {
+        this.logger.error(
+          `[Publish] Yjs render failed for doc ${documentId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        if (clientHtml === undefined) {
+          throw new InternalServerErrorException(
+            'Could not render the document for publishing',
+          );
+        }
+      }
+    }
+    if (clientHtml === undefined) {
+      throw new BadRequestException(
+        'Document has no content yet; open it in the editor first',
+      );
+    }
+    // Санитизация: в БД попадает только HTML из белого списка (защита от stored XSS)
+    const html = sanitizeDocumentHtml(clientHtml);
+    return { html, text: htmlToPlainText(html) };
+  }
+
+  /** Published versions of a document, newest first (readers: OWNER/EDITOR/VIEWER). */
+  async listVersions(documentId: string, userId: string) {
+    await this.permissions.assertDocumentRole(userId, documentId, Role.VIEWER);
+    const versions = await this.prisma.documentVersion.findMany({
+      where: { documentId },
+      orderBy: { version: 'desc' },
+      take: DocumentService.VERSION_LIST_LIMIT,
+      select: {
+        version: true,
+        title: true,
+        createdAt: true,
+        author: { select: { id: true, email: true } },
+      },
+    });
+    return versions;
+  }
+
+  /** One published version incl. its frozen HTML. */
+  async getVersion(documentId: string, version: number, userId: string) {
+    await this.permissions.assertDocumentRole(userId, documentId, Role.VIEWER);
+    const found = await this.prisma.documentVersion.findUnique({
+      where: { documentId_version: { documentId, version } },
+      select: {
+        version: true,
+        title: true,
+        contentHtml: true,
+        createdAt: true,
+        author: { select: { id: true, email: true } },
+      },
+    });
+    if (!found) throw new NotFoundException('Version not found');
+    return found;
   }
 
   public async hybridSearch(userId: string, query: string) {
@@ -340,6 +419,7 @@ export class DocumentService {
         SELECT "documentId", "textContent", (1 - (embedding <=> ${queryVectorStr}::vector)) as score
         FROM "DocumentChunk"
         WHERE "documentId" IN (${Prisma.join(accessibleDocIds)})
+          AND embedding IS NOT NULL
         ORDER BY embedding <=> ${queryVectorStr}::vector ASC
           LIMIT 3
       `;

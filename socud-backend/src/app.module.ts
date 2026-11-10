@@ -10,6 +10,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { SpaceModule } from './space/space.module';
 import { DocumentModule } from './document/document.module';
+import { QueueModule } from './queue/queue.module';
 import { HocuspocusModule } from './hocuspocus/hocuspocus.module'; // ИМПОРТ
 import { HealthModule } from './health/health.module';
 import { buildLoggerParams } from './observability/logger.config';
@@ -32,6 +33,7 @@ import { buildLoggerParams } from './observability/logger.config';
     AuthModule,
     SpaceModule,
     DocumentModule,
+    QueueModule,
     HocuspocusModule, // РЕГИСТРАЦИЯ МОДУЛЯ
     HealthModule,
   ],
