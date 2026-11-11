@@ -17,18 +17,30 @@
 #       --admin               create or promote the admin from SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD
 #                             (read from socud-backend/.env or the environment, not the root .env)
 #       --db-only             only PostgreSQL and Redis; the data steps above still run
-#       --no-worker           do not start the AI worker (it is skipped by itself when AI_WORKER_URL points to another
-#                             machine, or when EMBEDDING_PROVIDER=api: embeddings then come from a hosted API)
+#       --no-worker           do not start the AI worker. It is skipped by itself unless the effective
+#                             EMBEDDING_PROVIDER is worker AND AI_WORKER_URL is loopback (a worker on another
+#                             machine, or a hosted API, needs no local worker; see "Embedding profile" below)
 #       --no-frontend         do not start the frontend
 #   ./dev.sh restart [start options]           stop the apps and start them again (databases stay up)
 #   ./dev.sh stop [--keep-db]                  stop the apps and the databases (volumes are kept)
-#   ./dev.sh status                            what is running
+#   ./dev.sh status                            what is running, the embedding profile, and for a remote worker
+#                                              whether its /health answers (2 s timeout, never fatal)
 #   ./dev.sh logs [worker|backend|frontend]    follow the logs (default: all)
 #   ./dev.sh reset [-y|--yes]                  wipe all data like start --clean; stops the dev.sh apps, starts nothing
 #   ./dev.sh seed [--reseed] [seed args...]    demo data only (added if missing; --reseed replaces it);
 #                                              ./dev.sh seed --help lists the seed:demo options
 #   ./dev.sh migrate                           apply database migrations
 #   ./dev.sh admin                             create or promote the admin user
+#
+# Embedding profile (how the embedding method is chosen; the backend resolves it the same way):
+#   EMBEDDING_PROFILE=<name> selects the settings named <NAME>__<VAR> (upper case, "-" becomes "_"), e.g.
+#   API__EMBEDDING_PROVIDER or PC__AI_WORKER_URL, in place of the plain <VAR>. The environment wins over
+#   socud-backend/.env, for the profile name and for every variable, so a one-off override works:
+#       EMBEDDING_PROFILE=local ./dev.sh start      (use ./dev.sh restart when the apps are already up)
+#   Effective provider worker + loopback AI_WORKER_URL -> the local MLX worker is started;
+#   provider worker + another host (a PC)               -> no local worker, `status` shows "remote worker at <origin>";
+#   provider api                                        -> no worker ("not needed").
+#   An unknown profile name (no <NAME>__ variables) stops start/restart with the list of profiles found.
 #
 # Examples:
 #   ./dev.sh start --install                   first time on this machine (then fill in the secrets it lists)
@@ -49,7 +61,8 @@
 # Compatible with the bash 3.2 that ships with macOS.
 
 set -u
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+# BASH_SOURCE (not $0) so that dev.test.sh can source this file and call the functions (main runs only when executed).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT" || exit 1
 
 RUN_DIR="$ROOT/.run"
@@ -139,25 +152,138 @@ env_value() {
              -e 's/^"(.*)"$/\1/' -e "s/^'(.*)'\$/\1/"
 }
 
-worker_is_remote() {
-  local url
-  url="$(env_value AI_WORKER_URL "$ROOT/socud-backend/.env")"
-  [ -n "$url" ] || return 1
-  case "$url" in
-    *127.0.0.1*|*localhost*|*"[::1]"*) return 1 ;;
-    *) return 0 ;;
+# ---------------------------------------------------------------- embedding profile
+# The same rules as socud-backend/src/config/embedding-profile.ts (keep them in step; dev.test.sh covers this side).
+# Variables come from the environment first, then from socud-backend/.env, as for the backend itself.
+
+# True when KEY is assigned in the env file (even to an empty value).
+env_has() { # KEY FILE
+  [ -f "$2" ] && grep -qE "^[[:space:]]*(export[[:space:]]+)?$1=" "$2"
+}
+
+# True when KEY is set in the environment (even empty) or assigned in socud-backend/.env.
+# KEY must be a plain variable name; anything else counts as not set.
+cfg_has() {
+  [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+  [ -n "${!1+x}" ] || env_has "$1" "$ROOT/socud-backend/.env"
+}
+
+# Value of KEY: the environment if it is set, else socud-backend/.env, else empty.
+cfg_get() {
+  [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 0
+  if [ -n "${!1+x}" ]; then
+    printf '%s\n' "${!1}"
+  else
+    env_value "$1" "$ROOT/socud-backend/.env"
+  fi
+}
+
+lower_trim() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]'; }
+# Lower case with only the ends trimmed (a space inside a profile name is an error, not something to hide).
+lower_ends() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//'; }
+
+# Active profile name, lower case; empty when none. A non-empty environment value wins over the file.
+embedding_profile() {
+  local v="${EMBEDDING_PROFILE:-}"
+  [ -n "$(lower_trim "$v")" ] || v="$(env_value EMBEDDING_PROFILE "$ROOT/socud-backend/.env")"
+  lower_ends "$v"
+}
+
+# `my-pc` -> MY_PC
+profile_prefix() { printf '%s' "$1" | tr '[:lower:]-' '[:upper:]_'; }
+
+# Profile names that have at least one <NAME>__<VAR> variable, comma separated.
+embedding_profiles_found() {
+  { env | cut -d= -f1; [ -f "$ROOT/socud-backend/.env" ] && sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z0-9_]+)=.*/\2/p' "$ROOT/socud-backend/.env"; } 2>/dev/null \
+    | grep -E '^[A-Z0-9][A-Z0-9_]*__[A-Z0-9_]+$' | sed -E 's/__.*//' | sort -u \
+    | tr '[:upper:]_' '[:lower:]-' | paste -sd, - | sed 's/,/, /g'
+}
+
+# Checks the active profile. Prints nothing and returns 0 when there is none or it is usable; otherwise
+# prints the reason (same wording as the backend's) and returns 1.
+embedding_profile_problem() {
+  local p prefix found
+  p="$(embedding_profile)"
+  [ -n "$p" ] || return 0
+  if ! [[ "$p" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+    echo "EMBEDDING_PROFILE=\"$p\" is not a valid profile name: use lower-case letters, digits, \"_\" and \"-\" (e.g. local, pc, api)."
+    return 1
+  fi
+  prefix="$(profile_prefix "$p")__"
+  if [ -n "$({ env | cut -d= -f1; sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z0-9_]+)=.*/\2/p' "$ROOT/socud-backend/.env" 2>/dev/null; } | grep -E "^${prefix}[A-Z0-9_]+\$" | head -n 1)" ]; then
+    return 0
+  fi
+  found="$(embedding_profiles_found)"
+  if [ -n "$found" ]; then found="profiles with variables: $found"; else found="no profile variables are set at all"; fi
+  echo "EMBEDDING_PROFILE=\"$p\" has no ${prefix}* variables ($found). Define the profile in socud-backend/.env (${prefix}EMBEDDING_PROVIDER=...) or unset EMBEDDING_PROFILE."
+  return 1
+}
+
+# Effective value of an embedding setting: the active profile's <NAME>__VAR when it is set (even empty),
+# otherwise the plain VAR.
+embedding_setting() { # VAR
+  local p
+  p="$(embedding_profile)"
+  if [[ "$p" =~ ^[a-z0-9][a-z0-9_-]*$ ]] && cfg_has "$(profile_prefix "$p")__$1"; then
+    cfg_get "$(profile_prefix "$p")__$1"
+  else
+    cfg_get "$1"
+  fi
+}
+
+# Effective provider: worker (default) or api.
+embedding_provider() {
+  local v
+  v="$(lower_trim "$(embedding_setting EMBEDDING_PROVIDER)")"
+  echo "${v:-worker}"
+}
+
+effective_worker_url() {
+  local v
+  v="$(embedding_setting AI_WORKER_URL | tr -d '[:space:]')"
+  echo "${v:-http://127.0.0.1:8000}"
+}
+
+# scheme://host:port of a URL (no path, no credentials).
+url_origin() {
+  local scheme rest hostport
+  scheme="${1%%://*}"
+  rest="${1#*://}"
+  rest="${rest##*@}"
+  hostport="${rest%%/*}"
+  hostport="${hostport%%\?*}"
+  echo "$scheme://$hostport"
+}
+
+is_loopback_host() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    localhost|*.localhost|::1|127.*) return 0 ;;
+    *) return 1 ;;
   esac
 }
 
-# True when the backend embeds through a hosted API (EMBEDDING_PROVIDER=api): no AI worker is needed.
-# The environment wins over socud-backend/.env, as it does for the backend itself.
-embedding_provider_is_api() {
-  local v
-  v="${EMBEDDING_PROVIDER:-}"
-  [ -n "$v" ] || v="$(env_value EMBEDDING_PROVIDER "$ROOT/socud-backend/.env")"
-  v="$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-  [ "$v" = api ]
+# True when the effective AI_WORKER_URL points at this machine (loopback host).
+worker_url_is_loopback() { is_loopback_host "$(db_host "$(effective_worker_url)")"; }
+
+embedding_provider_is_api() { [ "$(embedding_provider)" = api ]; }
+
+# True when the AI worker is wanted on this machine: provider worker and a loopback AI_WORKER_URL.
+local_worker_wanted() { [ "$(embedding_provider)" = worker ] && worker_url_is_loopback; }
+
+# Why no local worker is wanted ("" when one is): used in start and status.
+worker_not_needed_reason() {
+  local p tag=""
+  p="$(embedding_profile)"
+  [ -n "$p" ] && tag=" (profile $p)"
+  if embedding_provider_is_api; then
+    echo "not needed$tag: embeddings come from a hosted API"
+  elif ! worker_url_is_loopback; then
+    echo "remote worker at $(url_origin "$(effective_worker_url)")$tag"
+  fi
 }
+
+# Short, non-fatal reachability probe of a worker's /health (never prints a secret).
+remote_worker_reachable() { curl -fsS -o /dev/null --max-time 2 "$(url_origin "$(effective_worker_url)")/health" 2>/dev/null; }
 
 wait_http() { # url seconds
   local i=0
@@ -226,8 +352,8 @@ check_foreign_listeners() {
   local name p
   for name in backend worker; do
     svc_alive "$name" && continue
-    # With EMBEDDING_PROVIDER=api no worker runs, so whatever holds port 8000 is none of our business.
-    [ "$name" = worker ] && embedding_provider_is_api && continue
+    # Without a local worker (hosted API, or a worker on another machine) whatever holds port 8000 is none of our business.
+    [ "$name" = worker ] && ! local_worker_wanted && continue
     for p in $(svc_port "$name") $(svc_extra_ports "$name"); do
       if port_listening "$p"; then
         die "port $p is held by $(port_owner "$p"), which dev.sh did not start. Stop it first, then retry."
@@ -540,13 +666,18 @@ cmd_start() {
     WITH_WORKER=0
     START_FRONTEND=0
   fi
-  if [ "$WITH_WORKER" = 1 ] && embedding_provider_is_api; then
-    say "EMBEDDING_PROVIDER=api: embeddings come from the hosted API, not starting the AI worker."
-    WITH_WORKER=0
+  local problem profile reason
+  problem="$(embedding_profile_problem)" || die "$problem"
+  profile="$(embedding_profile)"
+  if [ -n "$profile" ]; then
+    say "Embedding profile: $profile (provider $(embedding_provider))"
   fi
-  if [ "$WITH_WORKER" = 1 ] && worker_is_remote; then
-    say "AI_WORKER_URL points to another machine, not starting a local worker."
-    WITH_WORKER=0
+  if [ "$WITH_WORKER" = 1 ]; then
+    reason="$(worker_not_needed_reason)"
+    if [ -n "$reason" ]; then
+      say "AI worker: $reason; not starting a local worker."
+      WITH_WORKER=0
+    fi
   fi
 
   if [ "$DO_INSTALL" = 1 ]; then do_install; fi
@@ -672,7 +803,10 @@ cmd_stop() {
 }
 
 cmd_restart() {
+  local problem
   parse_start_args "$@"
+  # Refuse a bad EMBEDDING_PROFILE before the apps are stopped.
+  problem="$(embedding_profile_problem)" || die "$problem"
   if [ "$DO_CLEAN" = 1 ]; then
     # Ask before the apps are stopped, so a refused wipe leaves them running.
     check_wipe_allowed
@@ -761,14 +895,36 @@ cmd_admin() {
 
 # ---------------------------------------------------------------- status / logs
 
+# Status line of the AI worker when no local one is wanted: "not needed" (api) or the remote worker + reachability.
+status_worker_line() {
+  local reason
+  reason="$(worker_not_needed_reason)"
+  case "$reason" in
+    remote*)
+      if remote_worker_reachable; then
+        printf '%-9s %s, /health reachable\n' worker "$reason"
+      else
+        printf '%-9s %s, /health NOT reachable (not fatal)\n' worker "$reason"
+      fi
+      ;;
+    *) printf '%-9s %s\n' worker "$reason" ;;
+  esac
+}
+
 cmd_status() {
-  local name port
+  local name port profile problem
+  profile="$(embedding_profile)"
+  if problem="$(embedding_profile_problem)"; then
+    printf '%-9s profile %s, provider %s\n' embedding "${profile:-none}" "$(embedding_provider)"
+  else
+    printf '%-9s %s\n' embedding "INVALID: $problem"
+  fi
   for name in $SERVICES; do
     port="$(svc_port "$name")"
     if svc_alive "$name"; then
       printf '%-9s running   (pgid %s, port %s)\n' "$name" "$(cat "$(pidfile "$name")")" "$port"
-    elif [ "$name" = worker ] && embedding_provider_is_api; then
-      printf '%-9s not needed (EMBEDDING_PROVIDER=api)\n' "$name"
+    elif [ "$name" = worker ] && [ -n "$(worker_not_needed_reason)" ]; then
+      status_worker_line
     elif port_listening "$port"; then
       printf '%-9s external  (port %s used by %s, not started by dev.sh)\n' "$name" "$port" "$(port_owner "$port")"
     else
@@ -806,16 +962,19 @@ usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' 
 
 cmd="${1:-}"
 [ $# -gt 0 ] && shift
-case "$cmd" in
-  start)   cmd_start "$@" ;;
-  stop)    cmd_stop "$@" ;;
-  restart) cmd_restart "$@" ;;
-  status)  cmd_status ;;
-  logs)    cmd_logs "$@" ;;
-  reset)   cmd_reset "$@" ;;
-  seed)    cmd_seed "$@" ;;
-  migrate) cmd_migrate "$@" ;;
-  admin)   cmd_admin "$@" ;;
-  ""|-h|--help|help) usage ;;
-  *) usage; exit 1 ;;
-esac
+# Sourcing the file (dev.test.sh) defines the functions only.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "$cmd" in
+    start)   cmd_start "$@" ;;
+    stop)    cmd_stop "$@" ;;
+    restart) cmd_restart "$@" ;;
+    status)  cmd_status ;;
+    logs)    cmd_logs "$@" ;;
+    reset)   cmd_reset "$@" ;;
+    seed)    cmd_seed "$@" ;;
+    migrate) cmd_migrate "$@" ;;
+    admin)   cmd_admin "$@" ;;
+    ""|-h|--help|help) usage ;;
+    *) usage; exit 1 ;;
+  esac
+fi
