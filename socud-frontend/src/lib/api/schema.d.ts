@@ -447,6 +447,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/embedding-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Embedding model of the index vs the active model
+         * @description Compares the embedding model(s) that produced the stored vectors with the model that embeds new content. `mismatch: true` means semantic search mixes vector spaces and is unreliable until the documents are re-embedded; search and embedding are never blocked. System admins only. The result is cached for 30 seconds.
+         */
+        get: operations["EmbeddingStatus_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -733,6 +753,31 @@ export interface components {
             status: "ok" | "error";
             /** @enum {string} */
             db: "up" | "down";
+        };
+        StoredEmbeddingModelDto: {
+            /** @example qwen3-embedding-4b@1024 */
+            model: string;
+            /** @description Chunks with a vector produced by this model. */
+            chunks: number;
+            /** @description Distinct documents owning those chunks. */
+            documents: number;
+        };
+        EmbeddingStatusDto: {
+            /**
+             * @description Vector space the active provider produces from now on.
+             * @example qwen3-embedding-4b@1024
+             */
+            activeModel: string;
+            /** @enum {string} */
+            provider: "worker" | "api";
+            /** @example 1024 */
+            dim: number;
+            /** @description Models present in the index, largest first. Chunks without a vector are not counted. */
+            stored: components["schemas"]["StoredEmbeddingModelDto"][];
+            /** @description True when the index holds vectors of a model other than the active one. */
+            mismatch: boolean;
+            /** @description Human-readable remedies; empty when there is no mismatch. */
+            recommendedActions: string[];
         };
     };
     responses: never;
@@ -2263,6 +2308,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponseDto"];
+                };
+            };
+        };
+    };
+    EmbeddingStatus_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingStatusDto"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
                 };
             };
         };
