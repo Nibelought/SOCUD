@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setAccessToken } from '@/lib/auth';
 import { publicApi } from '@/lib/api/public-client';
-import { apiErrorMessage } from '@/lib/api/errors';
+import { apiErrorMessage, caughtMessage } from '@/lib/api/errors';
 import { DEFAULT_AFTER_LOGIN, safeNextPath } from '@/lib/session';
 
 export default function LoginPage() {
@@ -36,8 +36,8 @@ export default function LoginPage() {
             // Return to the page the proxy / session expiry sent us from (validated same-origin path).
             const next = safeNextPath(new URLSearchParams(window.location.search).get("next"));
             router.push(next ?? DEFAULT_AFTER_LOGIN);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(caughtMessage(err));
         } finally {
             setLoading(false);
         }

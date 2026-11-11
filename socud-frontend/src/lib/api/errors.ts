@@ -12,3 +12,8 @@ export function apiErrorMessage(error: unknown, fallback: string, separator = ',
   }
   return fallback;
 }
+
+/** Message of a caught value (`catch (err: unknown)`): the Error's message, otherwise `fallback`. */
+export function caughtMessage(err: unknown, fallback = 'Something went wrong'): string {
+    return err instanceof Error && err.message ? err.message : fallback;
+}
