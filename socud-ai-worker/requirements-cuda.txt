@@ -1,14 +1,16 @@
 # Runtime dependencies of the PyTorch worker (BACKEND=torch): an NVIDIA GPU (CUDA), or CPU/MPS for testing.
 # Install torch FIRST from the CUDA index that matches the driver, otherwise pip pulls the CPU-only wheel on Windows:
-#   pip install torch --index-url https://download.pytorch.org/whl/cu130     (Linux/Windows, current NVIDIA driver)
-#   pip install -r requirements-cuda.txt
-# Pick the index from https://pytorch.org/get-started/locally/ (cu126, cu128, cu130, ... older drivers need older ones).
+#   pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cu132     (Linux/Windows, current NVIDIA driver)
+#   pip install -c constraints.txt -r requirements-cuda.txt
+# Direct dependencies are pinned exactly, transitive ones in constraints.txt (README, "Updating the Python pins").
+# The Docker image does this for you (socud-ai-worker/Dockerfile).
+# Pick the index from https://pytorch.org/get-started/locally/ (the pinned torch 2.15.0 is built for cu132 and cu134; older drivers need an older torch pin and CUDA index).
 # On macOS the default PyPI wheel already supports MPS (not needed: use the MLX worker there).
-torch>=2.8
+torch==2.15.0
 # 4.56 introduced the `dtype=` argument of from_pretrained; Qwen3 itself needs >= 4.51.
-transformers>=4.56
-numpy>=2.0
-fastapi>=0.162.3
-uvicorn[standard]>=0.54.0
-pydantic>=2.14.3
-pydantic-settings>=2.16.2
+transformers==5.22.2
+numpy==2.5.4
+fastapi==0.162.4
+uvicorn[standard]==0.54.0
+pydantic==2.14.3
+pydantic-settings==2.16.2

@@ -1,8 +1,9 @@
 # Test/lint dependencies only: no mlx, so this installs on Linux CI. mlx-dependent tests skip themselves.
-fastapi>=0.162.3
-pydantic>=2.14.3
-pydantic-settings>=2.16.2
-numpy>=2.0
-httpx2>=2.16.0
-pytest>=9.0
-ruff>=0.15
+# Install with `pip install -c constraints.txt -r requirements-dev.txt` (pins: README, "Updating the Python pins").
+fastapi==0.162.4
+pydantic==2.14.3
+pydantic-settings==2.16.2
+numpy==2.5.4
+httpx2==2.16.0
+pytest==9.2.0
+ruff==0.17.4
