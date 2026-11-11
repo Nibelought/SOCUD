@@ -494,7 +494,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, f
 ## Security model
 
 - Access is role based: OWNER, EDITOR, or VIEWER per space, optional per-document overrides, and a system admin flag that bypasses membership checks. Only OWNERs (and admins) change members; the last OWNER of a space cannot be removed or demoted.
-- Archived documents return 404 for everyone. There is no restore endpoint yet (the UI's Restore button calls a route that does not exist), so an archived document can only be hard-deleted by an OWNER.
+- Every route that targets a space or a document declares its minimum role (`@RequireRole()`), enforced by `RoleGuard` after the JWT guard. The guard runs before request validation, so a caller without the role gets 403 even with an invalid body. The system admin flag is read from the user's database row on every request (never from the token), so revoking it takes effect immediately.
+- Archived documents return 404 for everyone, including their OWNERs. An OWNER (or system admin) can bring them back with `POST /document/:id/restore` (also restores the descendants archived at the same moment) or hard-delete them; `POST /space/:id/restore` does the same for a space and the documents archived with it. Both answer 200 `{ restored: number }` and 409 when the target is not archived; restoring a document also gives 409 while its space is archived (restore the space first).
 - The refresh token is an opaque random value stored hashed in the database and sent in an httpOnly, SameSite=Strict cookie scoped to `/auth`. It rotates on every use, reuse of an old token revokes the whole session family, and a session lasts at most 30 days.
 - The access token (JWT, 15 minutes) is kept in `localStorage`.
 - Hocuspocus authenticates with the access token and re-checks access periodically (`ACCESS_RECHECK_MS`): revoked or archived documents are closed, role changes toggle read-only.
