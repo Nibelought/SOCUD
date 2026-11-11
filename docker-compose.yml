@@ -5,6 +5,14 @@
 # Containers reach it at http://host.docker.internal:8000 (see AI_WORKER_URL), or a worker on another machine
 # (e.g. a PC with an NVIDIA GPU) at its LAN address: set AI_WORKER_URL and AI_WORKER_TOKEN in .env.
 #
+# Embedding profiles: EMBEDDING_PROFILE=<name> in .env (or in the shell: EMBEDDING_PROFILE=api docker compose ...)
+# selects the <NAME>__<VAR> settings (API__EMBEDDING_API_KEY, PC__AI_WORKER_URL, ...) instead of the plain ones.
+# Profile names are arbitrary, so the backend service reads the whole root .env through `env_file` (the profile
+# variables cannot be listed one by one) and resolves the profile itself at startup. Inside the container the
+# profile wins over the `${VAR:-default}` entries below, so they are only the fallback when no profile is chosen.
+# In the container a worker on the host is http://host.docker.internal:8000, not 127.0.0.1: use that in the `local`
+# block of THIS file (the native backend has its own socud-backend/.env).
+#
 # Networks:
 #   internal  no external access (internal: true): db, redis, backend, migrate talk here.
 #   edge      the backend (and the frontend) publish their ports through this one.
@@ -81,6 +89,13 @@ services:
       args:
         NODE_VERSION: *node-version
     restart: unless-stopped
+    # The root .env, whole: it carries EMBEDDING_PROFILE and the <NAME>__<VAR> profile variables, whose names are
+    # not known here. Every `environment:` entry below wins over it, and the profile (resolved by the backend)
+    # wins over both. Note: that also puts POSTGRES_PASSWORD, JWT_SECRET and, until you remove them, SEED_ADMIN_*
+    # into the backend container's environment (the first two are in it anyway). `required: false`: no .env, no error.
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -90,6 +105,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-}
       REDIS_URL: redis://redis:6379
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      # The one-off shell override `EMBEDDING_PROFILE=api docker compose ...` only reaches the container through
+      # this line (env_file reads the file, not the shell); empty = no profile.
+      EMBEDDING_PROFILE: ${EMBEDDING_PROFILE:-}
       # EMBEDDING_PROVIDER=worker (default): the AI worker, which runs natively on the host (see extra_hosts below).
       # EMBEDDING_PROVIDER=api: a hosted OpenAI-compatible API such as OpenRouter; no worker needed
       # (README "Using a hosted embedding API"). Empty values below mean "use the default".
@@ -102,6 +120,7 @@ services:
       EMBEDDING_API_QUERY_INSTRUCTION: ${EMBEDDING_API_QUERY_INSTRUCTION:-}
       EMBEDDING_API_REFERER: ${EMBEDDING_API_REFERER:-}
       EMBEDDING_API_TITLE: ${EMBEDDING_API_TITLE:-}
+      EMBEDDING_API_PROVIDER_ROUTING: ${EMBEDDING_API_PROVIDER_ROUTING:-}
       EMBEDDING_MODEL_ID: ${EMBEDDING_MODEL_ID:-}
       AI_WORKER_URL: ${AI_WORKER_URL:-http://host.docker.internal:8000}
       AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
