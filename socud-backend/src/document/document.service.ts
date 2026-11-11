@@ -70,14 +70,14 @@ export class DocumentService {
   }
 
   async findOne(documentId: string, userId: string) {
-    // 1. Проверяем права на чтение
+    // 1. Check read access
     const document = await this.permissions.assertDocumentRole(
       userId,
       documentId,
       Role.VIEWER,
     );
 
-    // 2. Возвращаем строго те поля, которые нужны фронтенду для режима просмотра
+    // 2. Return only the fields the frontend needs for view mode
     return {
       id: document.id,
       title: document.title,
@@ -104,7 +104,7 @@ export class DocumentService {
     return updatedDocument;
   }
 
-  // 1. Мягкое удаление (Архивация)
+  // 1. Soft delete (archive)
   async archive(documentId: string, userId: string) {
     await this.permissions.assertDocumentRole(userId, documentId, Role.OWNER);
 
@@ -117,9 +117,9 @@ export class DocumentService {
     });
   }
 
-  // 3. Жесткое удаление (Hard Delete)
+  // 3. Hard delete
   async remove(documentId: string, userId: string) {
-    // Удалять могут только OWNER (и из корзины: assertDocumentOwner видит архивные документы).
+    // Only an OWNER may delete (including from the trash: assertDocumentOwner sees archived documents).
     await this.permissions.assertDocumentOwner(
       userId,
       documentId,
@@ -193,11 +193,11 @@ export class DocumentService {
     userId: string,
     dto: PublishDocumentDto,
   ) {
-    // 1. Проверка прав на запись (Только OWNER или EDITOR могут публиковать)
+    // 1. Write access check (only OWNER or EDITOR may publish)
     await this.permissions.assertDocumentRole(userId, documentId, Role.EDITOR);
 
-    // 2. Источник контента — состояние Yjs на сервере (живое или последнее сохранённое);
-    // HTML от клиента используется только если у документа ещё нет Yjs-состояния.
+    // 2. Content source is the server-side Yjs state (live or last persisted);
+    // client HTML is used only if the document has no Yjs state yet.
     let yjsState = this.liveDocuments?.getState(documentId) ?? null;
     if (!yjsState) {
       const stored = await this.prisma.document.findUnique({
@@ -212,15 +212,15 @@ export class DocumentService {
       dto.html,
     );
 
-    // 3. Ссылки на другие документы (паттерн /documents/UUID) и чанки для эмбеддингов
+    // 3. Links to other documents (/documents/UUID pattern) and chunks for embeddings
     const candidateLinks = extractLinkedDocumentIds(html, documentId);
     const chunks = chunkHtml(html);
-    // Никогда не логируем содержимое документа
+    // Never log document content
     this.logger.log(
       `[Publish] Doc: ${documentId} | HTML length: ${html.length} | Links: ${candidateLinks.length}`,
     );
 
-    // 4. Транзакция — только работа с БД (никаких сетевых вызовов): документ, версия, чанки, связи
+    // 4. Transaction: DB work only (no network calls): document, version, chunks, links
     const { version, links } = await this.prisma.$transaction(
       async (tx) => {
         const updated = await tx.document.update({
@@ -247,7 +247,7 @@ export class DocumentService {
           },
         });
 
-        // Новые чанки без эмбеддинга; вектора запишет задача embed-document
+        // New chunks have no embedding yet; the embed-document job writes the vectors
         await tx.documentChunk.deleteMany({ where: { documentId } });
         if (chunks.length > 0) {
           await tx.documentChunk.createMany({
@@ -259,7 +259,7 @@ export class DocumentService {
           });
         }
 
-        // Ссылка на несуществующий/удалённый документ нарушила бы FK и сорвала бы публикацию
+        // A link to a missing/deleted document would violate the FK and abort publishing
         const existing =
           candidateLinks.length > 0
             ? await tx.document.findMany({
@@ -278,7 +278,7 @@ export class DocumentService {
               sourceDocId: documentId,
               targetDocId: targetId,
             })),
-            skipDuplicates: true, // Защита от дублей на уровне БД
+            skipDuplicates: true, // DB-level duplicate protection
           });
         }
         return { version, links };
@@ -286,8 +286,8 @@ export class DocumentService {
       { timeout: 15_000 },
     );
 
-    // 5. После коммита ставим эмбеддинг в очередь. Если Redis недоступен, публикация всё равно
-    // успешна; задачу подхватит reconcile/backfill (embeddedVersion < publishedVersion).
+    // 5. After commit, enqueue the embedding. If Redis is down the publish still succeeds;
+    // reconcile/backfill picks the job up later (embeddedVersion < publishedVersion).
     const embeddingQueued = this.queue
       ? await this.queue.enqueueEmbedDocument({ documentId, version })
       : false;
@@ -328,7 +328,7 @@ export class DocumentService {
         'Document has no content yet; open it in the editor first',
       );
     }
-    // Санитизация: в БД попадает только HTML из белого списка (защита от stored XSS)
+    // Sanitization: only allow-listed HTML reaches the DB (stored XSS protection)
     const html = sanitizeDocumentHtml(clientHtml);
     return { html, text: htmlToPlainText(html) };
   }
@@ -479,7 +479,7 @@ export class DocumentService {
   }
 
   async getMembersWithInheritance(documentId: string, userId: string) {
-    // Проверяем, что запрашивающий вообще имеет доступ к документу
+    // Make sure the requester has access to the document at all
     await this.permissions.assertDocumentRole(userId, documentId, Role.VIEWER);
 
     const doc = await this.prisma.document.findUnique({
@@ -498,7 +498,7 @@ export class DocumentService {
 
     if (!doc) throw new NotFoundException('Document not found');
 
-    // 1. Прямые участники документа
+    // 1. Direct document members
     const directMembers = doc.members.map((m) => ({
       userId: m.userId,
       role: m.role,
@@ -506,7 +506,7 @@ export class DocumentService {
       source: 'direct' as const,
     }));
 
-    // 2. Наследственные участники пространства (исключаем тех, у кого уже есть прямые права)
+    // 2. Members inherited from the space (excluding those who already have direct access)
     const inheritedMembers = doc.space.members
       .filter((sm) => !directMembers.some((dm) => dm.userId === sm.userId))
       .map((sm) => ({

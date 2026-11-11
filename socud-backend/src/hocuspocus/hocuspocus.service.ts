@@ -151,7 +151,7 @@ export class HocuspocusService implements OnModuleInit, OnModuleDestroy {
     const jwtSecret = this.config.getOrThrow<string>('JWT_SECRET');
 
     return {
-      port: wsPort, // Выделенный порт только для WebSockets
+      port: wsPort, // dedicated port for WebSockets only
       debounce: this.readPositiveNumber(
         'WS_STORE_DEBOUNCE_MS',
         DEFAULT_STORE_DEBOUNCE_MS,

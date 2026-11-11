@@ -30,7 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // with PermissionService for the rest of this request only, so revoking admin is immediate.
     rememberSystemAdmin(user.id, user.isSystemAdmin);
 
-    // объект будет доступен в контроллерах через req.user
+    // exposed to controllers as req.user
     return {
       id: user.id,
       email: user.email,

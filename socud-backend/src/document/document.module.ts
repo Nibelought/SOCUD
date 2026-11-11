@@ -17,6 +17,6 @@ import { SearchModule } from '../search/search.module';
   ],
   controllers: [DocumentController],
   providers: [DocumentService],
-  exports: [DocumentService], // КРИТИЧЕСКИ ВАЖНО: Делает сервис публичным для других модулей
+  exports: [DocumentService], // must stay exported: other modules depend on it
 })
 export class DocumentModule {}

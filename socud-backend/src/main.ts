@@ -26,19 +26,19 @@ async function bootstrap() {
   // Per-request memo for access checks (see permission/request-memo.ts); must precede the routes.
   app.use(requestMemoMiddleware);
 
-  // Активация строгой валидации
+  // Strict request validation
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Отсекать поля, которых нет в DTO
-      forbidNonWhitelisted: true, // Выдавать ошибку 400, если есть лишние поля
-      transform: true, // Автоматически приводить типы (например, string "1" к числу)
+      whitelist: true, // strip properties not declared in the DTO
+      forbidNonWhitelisted: true, // respond 400 on extra properties
+      transform: true, // coerce types (e.g. string "1" to number)
     }),
   );
 
-  // CORS: разрешены только origin-ы из CORS_ORIGIN (список через запятую)
+  // CORS: only origins listed in CORS_ORIGIN (comma-separated) are allowed
   app.enableCors({
     origin: parseCorsOrigins(config.getOrThrow<string>('CORS_ORIGIN')),
-    credentials: true, // refresh-токен живёт в httpOnly cookie
+    credentials: true, // the refresh token lives in an httpOnly cookie
   });
 
   // Swagger UI + JSON (off in production unless SWAGGER_ENABLED=true). After helmet(), so only the

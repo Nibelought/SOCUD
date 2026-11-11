@@ -249,7 +249,7 @@ export class DocumentController {
     return this.documentService.remove(id, userId);
   }
 
-  // --- УПРАВЛЕНИЕ ГРАНУЛЯРНЫМИ ПРАВАМИ ---
+  // --- Granular permissions ---
 
   @Put(':id/members')
   @RequireRole(Role.OWNER, { resource: 'document' })
