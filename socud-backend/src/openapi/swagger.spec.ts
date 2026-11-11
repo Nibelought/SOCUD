@@ -127,7 +127,7 @@ describe('OpenAPI document', () => {
       operations(doc).flatMap(({ op }) => op.tags as string[]),
     );
     expect([...tags].sort()).toEqual(
-      ['app', 'auth', 'document', 'health', 'space'].sort(),
+      ['admin', 'app', 'auth', 'document', 'health', 'space'].sort(),
     );
   });
 

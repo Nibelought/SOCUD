@@ -13,6 +13,7 @@ import { DocumentModule } from './document/document.module';
 import { QueueModule } from './queue/queue.module';
 import { HocuspocusModule } from './hocuspocus/hocuspocus.module'; // ИМПОРТ
 import { HealthModule } from './health/health.module';
+import { AdminModule } from './admin/admin.module';
 import { buildLoggerParams } from './observability/logger.config';
 
 @Module({
@@ -36,6 +37,7 @@ import { buildLoggerParams } from './observability/logger.config';
     QueueModule,
     HocuspocusModule, // РЕГИСТРАЦИЯ МОДУЛЯ
     HealthModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

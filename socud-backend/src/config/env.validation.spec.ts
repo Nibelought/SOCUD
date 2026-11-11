@@ -199,3 +199,271 @@ describe('validateEnv Swagger / session cookie settings', () => {
     );
   });
 });
+
+describe('validateEnv EMBEDDING_PROVIDER', () => {
+  const api = {
+    ...base,
+    EMBEDDING_PROVIDER: 'api',
+    EMBEDDING_API_KEY: 'sk-test',
+    EMBEDDING_API_MODEL: 'qwen/qwen3-embedding-4b',
+  };
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('defaults to the worker and needs no API settings', () => {
+    const env = validateEnv(base);
+    expect(env.EMBEDDING_PROVIDER).toBe('worker');
+    expect(env.EMBEDDING_API_URL).toBe('https://openrouter.ai/api/v1');
+    expect(env.EMBEDDING_API_BATCH_SIZE).toBe(32);
+    expect(env.EMBEDDING_API_KEY).toBeUndefined();
+  });
+
+  it('keeps EMBED_BATCH_SIZE unset by default and rejects > 32 for the worker', () => {
+    expect(validateEnv(base).EMBED_BATCH_SIZE).toBeUndefined();
+    expect(
+      validateEnv({ ...base, EMBED_BATCH_SIZE: '32' }).EMBED_BATCH_SIZE,
+    ).toBe(32);
+    expect(() => validateEnv({ ...base, EMBED_BATCH_SIZE: '33' })).toThrow(
+      /EMBED_BATCH_SIZE: must not be greater than 32/,
+    );
+  });
+
+  it('rejects an unknown provider', () => {
+    expect(() => validateEnv({ ...base, EMBEDDING_PROVIDER: 'cloud' })).toThrow(
+      /EMBEDDING_PROVIDER/,
+    );
+  });
+
+  it('accepts a complete api configuration', () => {
+    const env = validateEnv({ ...api, EMBEDDING_API_DIMENSIONS: '1024' });
+    expect(env.EMBEDDING_PROVIDER).toBe('api');
+    expect(env.EMBEDDING_API_DIMENSIONS).toBe(1024);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('requires the key and the model for provider=api, naming both', () => {
+    let message = '';
+    try {
+      validateEnv({ ...base, EMBEDDING_PROVIDER: 'api' });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(
+      /EMBEDDING_API_KEY: required when EMBEDDING_PROVIDER=api/,
+    );
+    expect(message).toMatch(
+      /EMBEDDING_API_MODEL: required when EMBEDDING_PROVIDER=api/,
+    );
+  });
+
+  it('treats empty API variables as unset', () => {
+    expect(() => validateEnv({ ...api, EMBEDDING_API_KEY: '' })).toThrow(
+      /EMBEDDING_API_KEY/,
+    );
+    expect(
+      validateEnv({ ...api, EMBEDDING_API_URL: '', EMBED_BATCH_SIZE: '' }),
+    ).toEqual(
+      expect.objectContaining({
+        EMBEDDING_API_URL: 'https://openrouter.ai/api/v1',
+      }),
+    );
+  });
+
+  it('rejects plain http to a public host and warns for a private one', () => {
+    expect(() =>
+      validateEnv({ ...api, EMBEDDING_API_URL: 'http://api.example.com/v1' }),
+    ).toThrow(/EMBEDDING_API_URL.*Use https/s);
+    validateEnv({ ...api, EMBEDDING_API_URL: 'http://192.168.1.5:8080/v1' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unencrypted'));
+    warn.mockClear();
+    validateEnv({ ...api, EMBEDDING_API_URL: 'http://127.0.0.1:8080/v1' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('rejects EMBEDDING_API_DIMENSIONS below EMBEDDING_DIM', () => {
+    expect(() =>
+      validateEnv({ ...api, EMBEDDING_API_DIMENSIONS: '512' }),
+    ).toThrow(
+      /EMBEDDING_API_DIMENSIONS: 512 is smaller than EMBEDDING_DIM=1024/,
+    );
+  });
+
+  it('allows bigger document batches for the api and warns above the API limit', () => {
+    expect(
+      validateEnv({ ...api, EMBED_BATCH_SIZE: '32' }).EMBED_BATCH_SIZE,
+    ).toBe(32);
+    validateEnv({
+      ...api,
+      EMBED_BATCH_SIZE: '64',
+      EMBEDDING_API_BATCH_SIZE: '16',
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('EMBEDDING_API_BATCH_SIZE=16'),
+    );
+  });
+
+  it('does not validate API settings when the provider is the worker', () => {
+    expect(() =>
+      validateEnv({ ...base, EMBEDDING_API_URL: 'http://api.example.com/v1' }),
+    ).not.toThrow();
+  });
+});
+
+describe('validateEnv EMBEDDING_PROFILE', () => {
+  const all = {
+    ...base,
+    EMBEDDING_PROVIDER: 'worker',
+    LOCAL__EMBEDDING_PROVIDER: 'worker',
+    LOCAL__AI_WORKER_URL: 'http://127.0.0.1:8000',
+    PC__AI_WORKER_URL: 'http://192.168.1.50:8000',
+    PC__AI_WORKER_TOKEN: 'pc-token',
+    PC__EMBED_CONCURRENCY: '2',
+    API__EMBEDDING_PROVIDER: 'api',
+    API__EMBEDDING_API_KEY: 'sk-test',
+    API__EMBEDDING_API_MODEL: 'qwen/qwen3-embedding-8b',
+    API__EMBEDDING_API_DIMENSIONS: '1024',
+    API__EMBED_CONCURRENCY: '4',
+    API__EMBEDDING_API_PROVIDER_ROUTING: '{"sort":"latency"}',
+  };
+
+  it('is unset by default and leaves plain variables alone', () => {
+    const env = validateEnv(all);
+    expect(env.EMBEDDING_PROFILE).toBeUndefined();
+    expect(env.EMBEDDING_PROVIDER).toBe('worker');
+    expect(env.EMBED_CONCURRENCY).toBe(1);
+  });
+
+  it('switches everything by changing only EMBEDDING_PROFILE', () => {
+    const local = validateEnv({ ...all, EMBEDDING_PROFILE: 'local' });
+    expect(local.EMBEDDING_PROFILE).toBe('local');
+    expect(local.EMBEDDING_PROVIDER).toBe('worker');
+    expect(local.AI_WORKER_URL).toBe('http://127.0.0.1:8000');
+    expect(local.EMBED_CONCURRENCY).toBe(1);
+
+    const pc = validateEnv({ ...all, EMBEDDING_PROFILE: 'pc' });
+    expect(pc.AI_WORKER_URL).toBe('http://192.168.1.50:8000');
+    expect(pc.AI_WORKER_TOKEN).toBe('pc-token');
+    expect(pc.EMBED_CONCURRENCY).toBe(2);
+
+    const api = validateEnv({ ...all, EMBEDDING_PROFILE: 'API' });
+    expect(api.EMBEDDING_PROFILE).toBe('api');
+    expect(api.EMBEDDING_PROVIDER).toBe('api');
+    expect(api.EMBEDDING_API_KEY).toBe('sk-test');
+    expect(api.EMBEDDING_API_DIMENSIONS).toBe(1024);
+    expect(api.EMBED_CONCURRENCY).toBe(4);
+    expect(api.EMBEDDING_API_PROVIDER_ROUTING).toBe('{"sort":"latency"}');
+  });
+
+  it('does not fail on an inactive api profile that has no key', () => {
+    const { API__EMBEDDING_API_KEY: _key, ...noKey } = all;
+    void _key;
+    expect(() =>
+      validateEnv({ ...noKey, EMBEDDING_PROFILE: 'pc' }),
+    ).not.toThrow();
+    expect(() => validateEnv({ ...noKey, EMBEDDING_PROFILE: 'api' })).toThrow(
+      /EMBEDDING_API_KEY: required when EMBEDDING_PROVIDER=api/,
+    );
+  });
+
+  it('beats plain and compose-style empty values', () => {
+    const env = validateEnv({
+      ...all,
+      EMBEDDING_PROFILE: 'api',
+      EMBEDDING_PROVIDER: 'worker',
+      EMBEDDING_API_KEY: '',
+      EMBEDDING_API_MODEL: '',
+      AI_WORKER_URL: 'http://host.docker.internal:8000',
+    });
+    expect(env.EMBEDDING_PROVIDER).toBe('api');
+    expect(env.EMBEDDING_API_MODEL).toBe('qwen/qwen3-embedding-8b');
+  });
+
+  it('reports an unknown profile with the profiles found', () => {
+    expect(() => validateEnv({ ...all, EMBEDDING_PROFILE: 'nas' })).toThrow(
+      /Invalid environment configuration:\n {2}- EMBEDDING_PROFILE="nas" has no NAS__\* variables \(profiles with variables: api, local, pc\)/,
+    );
+  });
+
+  it('reports a non-allow-listed profile variable', () => {
+    expect(() =>
+      validateEnv({
+        ...all,
+        EMBEDDING_PROFILE: 'pc',
+        PC__JWT_SECRET: 'x'.repeat(40),
+      }),
+    ).toThrow(/PC__JWT_SECRET cannot be profile-scoped/);
+  });
+
+  it('works through ConfigModule, so ConfigService sees the resolved values', async () => {
+    const saved = { ...process.env };
+    Object.assign(process.env, all, { EMBEDDING_PROFILE: 'api' });
+    try {
+      const moduleRef = await Test.createTestingModule({
+        imports: [
+          ConfigModule.forRoot({
+            isGlobal: true,
+            ignoreEnvFile: true,
+            validate: validateEnv,
+          }),
+        ],
+      }).compile();
+      const config = moduleRef.get(ConfigService);
+      expect(config.get('EMBEDDING_PROVIDER')).toBe('api');
+      expect(config.get('EMBEDDING_PROFILE')).toBe('api');
+    } finally {
+      for (const key of Object.keys(process.env)) {
+        if (!(key in saved)) delete process.env[key];
+      }
+      Object.assign(process.env, saved);
+    }
+  });
+});
+
+describe('validateEnv EMBEDDING_API_PROVIDER_ROUTING', () => {
+  const api = {
+    ...base,
+    EMBEDDING_PROVIDER: 'api',
+    EMBEDDING_API_KEY: 'sk-test',
+    EMBEDDING_API_MODEL: 'qwen/qwen3-embedding-8b',
+  };
+
+  it('is optional', () => {
+    expect(validateEnv(api).EMBEDDING_API_PROVIDER_ROUTING).toBeUndefined();
+    expect(
+      validateEnv({ ...api, EMBEDDING_API_PROVIDER_ROUTING: '' })
+        .EMBEDDING_API_PROVIDER_ROUTING,
+    ).toBeUndefined();
+  });
+
+  it.each(['{"sort":"latency"}', '{"ignore":["DeepInfra"]}', '{}'])(
+    'accepts the JSON object %s',
+    (value) => {
+      expect(
+        validateEnv({ ...api, EMBEDDING_API_PROVIDER_ROUTING: value })
+          .EMBEDDING_API_PROVIDER_ROUTING,
+      ).toBe(value);
+    },
+  );
+
+  it.each([
+    ['not json', /is not valid JSON/],
+    ["{'sort':'latency'}", /is not valid JSON/],
+    ['["DeepInfra"]', /must be a JSON object .* not an array/],
+    ['null', /must be a JSON object .* not null/],
+    ['"latency"', /must be a JSON object .* not string/],
+    ['42', /must be a JSON object .* not number/],
+  ])('rejects %s at startup', (value, message) => {
+    expect(() =>
+      validateEnv({ ...api, EMBEDDING_API_PROVIDER_ROUTING: value }),
+    ).toThrow(message);
+  });
+
+  it('validates it for the worker provider too', () => {
+    expect(() =>
+      validateEnv({ ...base, EMBEDDING_API_PROVIDER_ROUTING: 'oops' }),
+    ).toThrow(/EMBEDDING_API_PROVIDER_ROUTING/);
+  });
+});

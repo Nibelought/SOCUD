@@ -5,13 +5,15 @@ import {
   toVectorLiteral,
 } from './embed-document.handler';
 import { EmbeddingClient, EmbeddingError } from './embedding.client';
+import { EmbeddingModelGuard } from './embedding-model.guard';
 
 const m = (fn: unknown) => fn as jest.Mock;
 const DOC = 'doc-1';
 
 describe('EmbedDocumentHandler', () => {
   let prisma: jest.Mocked<PrismaService>;
-  let embeddings: { batchSize: number; embedBatch: jest.Mock };
+  let embeddings: { batchSize: number; modelId: string; embedBatch: jest.Mock };
+  let modelGuard: { warnBeforeEmbedding: jest.Mock };
   let handler: EmbedDocumentHandler;
 
   const chunks = (n: number) =>
@@ -28,8 +30,12 @@ describe('EmbedDocumentHandler', () => {
     m(prisma.document.findUnique).mockResolvedValue({ publishedVersion: 4 });
     m(prisma.document.updateMany).mockResolvedValue({ count: 1 });
     m(prisma.$executeRaw).mockResolvedValue(1);
+    modelGuard = {
+      warnBeforeEmbedding: jest.fn().mockResolvedValue(undefined),
+    };
     embeddings = {
       batchSize: 32,
+      modelId: 'test-model@2',
       embedBatch: jest
         .fn()
         .mockImplementation((texts: string[]) =>
@@ -39,6 +45,7 @@ describe('EmbedDocumentHandler', () => {
     handler = new EmbedDocumentHandler(
       prisma,
       embeddings as unknown as EmbeddingClient,
+      modelGuard as unknown as EmbeddingModelGuard,
     );
   });
 
@@ -55,8 +62,9 @@ describe('EmbedDocumentHandler', () => {
       true,
     );
     expect(m(prisma.$executeRaw)).toHaveBeenCalledTimes(3);
-    const [strings, ids, vectors] = m(prisma.$executeRaw).mock.calls[0] as [
+    const [strings, , ids, vectors] = m(prisma.$executeRaw).mock.calls[0] as [
       TemplateStringsArray,
+      string,
       string[],
       string[],
     ];
@@ -67,6 +75,57 @@ describe('EmbedDocumentHandler', () => {
       where: { id: DOC, publishedVersion: 4 },
       data: { embeddedVersion: 4 },
     });
+  });
+
+  it('writes the active model id together with every stored vector', async () => {
+    m(prisma.$queryRaw).mockResolvedValue(chunks(3));
+
+    await handler.handle({ documentId: DOC, version: 4 });
+
+    const [strings, model] = m(prisma.$executeRaw).mock.calls[0] as [
+      TemplateStringsArray,
+      string,
+    ];
+    expect(strings.join('?')).toContain('"embeddingModel" = ?');
+    expect(model).toBe('test-model@2');
+  });
+
+  it('warns through the model guard before embedding, but not when there is nothing to embed', async () => {
+    m(prisma.$queryRaw).mockResolvedValue(chunks(1));
+    await handler.handle({ documentId: DOC, version: 4 });
+    expect(modelGuard.warnBeforeEmbedding).toHaveBeenCalledWith(DOC);
+
+    modelGuard.warnBeforeEmbedding.mockClear();
+    m(prisma.$queryRaw).mockResolvedValue([]);
+    await handler.handle({ documentId: DOC, version: 4 });
+    expect(modelGuard.warnBeforeEmbedding).not.toHaveBeenCalled();
+  });
+
+  it('selects only NULL-embedding chunks by default, and other-model chunks too with reembedMismatched', async () => {
+    m(prisma.$queryRaw).mockResolvedValue([]);
+    await handler.handle({ documentId: DOC, version: 4 });
+    const normal = (
+      m(prisma.$queryRaw).mock.calls[0] as [TemplateStringsArray]
+    )[0].join('?');
+    expect(normal).toContain('"embedding" IS NULL');
+    expect(normal).not.toContain('embeddingModel');
+
+    m(prisma.$queryRaw).mockClear();
+    await handler.handle({
+      documentId: DOC,
+      version: 4,
+      reembedMismatched: true,
+    });
+    const [strings, ...params] = m(prisma.$queryRaw).mock.calls[0] as [
+      TemplateStringsArray,
+      ...unknown[],
+    ];
+    const reembed = strings.join('?');
+    expect(reembed).toContain('"embedding" IS NULL');
+    expect(reembed).toContain('COALESCE("embeddingModel"');
+    expect(reembed).toContain('<>');
+    // document id, legacy model for NULL rows, active model
+    expect(params).toEqual([DOC, 'qwen3-embedding-4b@1024', 'test-model@2']);
   });
 
   it('is a no-op for a stale job (a newer version was published)', async () => {

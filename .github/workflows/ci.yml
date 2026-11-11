@@ -114,6 +114,9 @@ jobs:
       - name: Validate compose file
         run: POSTGRES_PASSWORD=ci-dummy docker compose --profile app config -q
 
+      - name: dev.sh embedding-profile rules
+        run: bash dev.test.sh
+
   ai-worker:
     name: AI worker (Python)
     runs-on: ubuntu-latest

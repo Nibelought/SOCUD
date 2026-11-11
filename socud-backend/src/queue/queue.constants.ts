@@ -11,6 +11,12 @@ export interface EmbedDocumentJobData {
    * Publish already wrote the chunks inside its transaction and does not set this.
    */
   rebuildChunks?: boolean;
+  /**
+   * Also re-embed chunks whose vector came from another model than the active one
+   * (`backfill:embeddings --reembed-mismatched`). Old vectors are overwritten in place, chunk by
+   * chunk, so a document is never left without vectors and an interrupted run simply resumes.
+   */
+  reembedMismatched?: boolean;
 }
 
 /** Attempts/backoff for embedding jobs: 5 tries, 5 s, 10 s, 20 s, 40 s. */

@@ -1,70 +1,88 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createEmbeddingProvider } from './embedding-provider.factory';
+import {
+  EMBEDDING_PROVIDER,
+  type EmbeddingProvider,
+  type EmbeddingProviderName,
+} from './embedding-provider.types';
 
-/** The AI worker accepts at most this many texts per /embed call (MAX_BATCH_SIZE). */
-export const EMBED_BATCH_SIZE = 32;
+export { EmbeddingConfigError, EmbeddingError } from './embedding.error';
+export {
+  DEFAULT_EMBED_BATCH_SIZE,
+  EMBED_BATCH_SIZE,
+} from './embedding-provider.types';
 
 /**
- * Default texts per /embed call. The MLX worker is compute-bound (~0.3–0.5 passages/s on an M1,
- * no gain from larger batches), so small batches keep each call well under the timeout and let a
- * query embedding slip in between document batches. With 1, a search waits at most one chunk (~2.7 s).
+ * Turns texts into vectors through the provider chosen by EMBEDDING_PROVIDER:
+ *  - `worker` (default): the SOCUD AI worker's `POST /embed` (see PHASE2 contract);
+ *  - `api`: a hosted OpenAI-compatible `/embeddings` API such as OpenRouter.
+ * The public API is the same for both; see `WorkerEmbeddingProvider` / `ApiEmbeddingProvider`.
  */
-export const DEFAULT_EMBED_BATCH_SIZE = 1;
-
-/** Error from the embedding worker. `retryable` tells the queue whether another attempt can help. */
-export class EmbeddingError extends Error {
-  constructor(
-    message: string,
-    readonly retryable: boolean,
-    readonly status?: number,
-  ) {
-    super(message);
-    this.name = 'EmbeddingError';
-  }
-}
-
-/** Client of the AI worker's `POST /embed` (see PHASE2 contract). */
 @Injectable()
-export class EmbeddingClient {
-  constructor(private readonly config: ConfigService) {}
+export class EmbeddingClient implements OnModuleInit {
+  private readonly logger = new Logger(EmbeddingClient.name);
+  private readonly impl: EmbeddingProvider;
+  private readonly activeProfile: string | null;
 
-  get dim(): number {
-    return Number(this.config.get<number>('EMBEDDING_DIM') ?? 1024);
-  }
-
-  private get url(): string {
-    const base = this.config.getOrThrow<string>('AI_WORKER_URL');
-    return `${base.replace(/\/+$/, '')}/embed`;
-  }
-
-  /** Texts per /embed call: EMBED_BATCH_SIZE, clamped to the worker's limit. */
-  get batchSize(): number {
-    const configured = Number(
-      this.config.get<number>('EMBED_BATCH_SIZE') ?? DEFAULT_EMBED_BATCH_SIZE,
-    );
-    if (!Number.isFinite(configured) || configured < 1) {
-      return DEFAULT_EMBED_BATCH_SIZE;
-    }
-    return Math.min(Math.floor(configured), EMBED_BATCH_SIZE);
-  }
-
-  private timeoutMs(isQuery: boolean): number {
-    return isQuery
-      ? Number(this.config.get<number>('EMBED_QUERY_TIMEOUT_MS') ?? 10_000)
-      : Number(this.config.get<number>('EMBED_TIMEOUT_MS') ?? 180_000);
-  }
-
-  private get headers(): Record<string, string> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    const token = this.config.get<string>('AI_WORKER_TOKEN');
-    if (token) headers['X-Worker-Token'] = token;
-    return headers;
+  constructor(
+    config: ConfigService,
+    @Optional() @Inject(EMBEDDING_PROVIDER) provider?: EmbeddingProvider,
+  ) {
+    this.impl = provider ?? createEmbeddingProvider(config);
+    const profile = config.get<string>('EMBEDDING_PROFILE');
+    this.activeProfile =
+      typeof profile === 'string' && profile !== '' ? profile : null;
   }
 
   /**
-   * Embeds `texts`, splitting them into worker-sized batches. Returns one vector per text, in
+   * Logs which embedding method is active, then probes the provider once; an unreachable API only
+   * logs a warning. Skipped in tests. Runs in every process that builds this client (API, backfill
+   * and seed scripts), so the active profile is always visible in the log.
+   */
+  async onModuleInit(): Promise<void> {
+    if (process.env.NODE_ENV === 'test') return;
+    this.logger.log(this.describe());
+    await this.impl.probe?.();
+  }
+
+  /** Name of the active embedding profile (EMBEDDING_PROFILE), or null when none is selected. */
+  get profile(): string | null {
+    return this.activeProfile;
+  }
+
+  /** One log line: profile, provider, model id and the service origin. Never contains a secret. */
+  describe(): string {
+    const endpoint = this.impl.endpoint ? `, ${this.impl.endpoint}` : '';
+    return `Embedding profile: ${this.activeProfile ?? 'none'} (provider ${this.provider}, model id ${this.modelId}${endpoint})`;
+  }
+
+  get dim(): number {
+    return this.impl.dim;
+  }
+
+  /** Stable id of the vector space the active provider produces, e.g. `qwen3-embedding-4b@1024`. */
+  get modelId(): string {
+    return this.impl.modelId;
+  }
+
+  get provider(): EmbeddingProviderName {
+    return this.impl.name;
+  }
+
+  /** Texts per request when embedding documents (provider specific, see EMBED_BATCH_SIZE). */
+  get batchSize(): number {
+    return this.impl.batchSize;
+  }
+
+  /**
+   * Embeds `texts`, splitting them into provider-sized batches. Returns one vector per text, in
    * order. Throws EmbeddingError: retryable for network errors, timeouts, 408/429/5xx; not
    * retryable for other 4xx and for responses with the wrong shape or dimension.
    */
@@ -79,59 +97,7 @@ export class EmbeddingClient {
     return vectors;
   }
 
-  async embedBatch(texts: string[], isQuery: boolean): Promise<number[][]> {
-    let res: Response;
-    try {
-      res = await fetch(this.url, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify({ texts, is_query: isQuery }),
-        signal: AbortSignal.timeout(this.timeoutMs(isQuery)),
-      });
-    } catch (err) {
-      throw new EmbeddingError(
-        `AI worker unreachable: ${err instanceof Error ? err.message : String(err)}`,
-        true,
-      );
-    }
-
-    if (!res.ok) {
-      const retryable =
-        res.status >= 500 || res.status === 408 || res.status === 429;
-      throw new EmbeddingError(
-        `AI worker responded ${res.status}`,
-        retryable,
-        res.status,
-      );
-    }
-
-    let body: { embeddings?: unknown; dim?: unknown };
-    try {
-      body = (await res.json()) as typeof body;
-    } catch {
-      throw new EmbeddingError('AI worker returned invalid JSON', true);
-    }
-
-    const embeddings = body.embeddings;
-    if (!Array.isArray(embeddings) || embeddings.length !== texts.length) {
-      throw new EmbeddingError(
-        `AI worker returned ${Array.isArray(embeddings) ? embeddings.length : 'no'} embeddings for ${texts.length} texts`,
-        false,
-      );
-    }
-    const dim = this.dim;
-    for (const vector of embeddings) {
-      if (
-        !Array.isArray(vector) ||
-        vector.length !== dim ||
-        !vector.every((x) => typeof x === 'number' && Number.isFinite(x))
-      ) {
-        throw new EmbeddingError(
-          `AI worker returned a vector of dimension ${Array.isArray(vector) ? vector.length : 'n/a'}, expected ${dim}`,
-          false,
-        );
-      }
-    }
-    return embeddings as number[][];
+  embedBatch(texts: string[], isQuery: boolean): Promise<number[][]> {
+    return this.impl.embedBatch(texts, isQuery);
   }
 }

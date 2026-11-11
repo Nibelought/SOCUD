@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Share2 } from "lucide-react";
 import SearchModal from "@/components/search/SearchModal";
+import EmbeddingModelBanner from "@/components/admin/EmbeddingModelBanner";
 import { logout, sessionLostLoginUrl } from '@/lib/auth';
 import { api, type components } from '@/lib/api/client';
 
@@ -116,6 +117,9 @@ export default function DashboardPage() {
             </header>
 
             <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+                {/* Admins only: the search index was built with another embedding model */}
+                <EmbeddingModelBanner />
 
                 {/* WELCOME BANNER */}
                 <div className="bg-blue-50 rounded-xl p-8 flex items-center justify-between border border-blue-100 shadow-sm">

@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { EmbeddingClient, EmbeddingError } from './embedding.client';
+import { Logger } from '@nestjs/common';
 import { createConfigServiceMock } from '../test-utils/mocks';
 
 const vec = (dim: number) => Array.from({ length: dim }, () => 0.5);
@@ -144,10 +145,125 @@ describe('EmbeddingClient', () => {
     ).rejects.toThrow(/1 embeddings for 2/);
   });
 
+  it('exposes provider and modelId for the default worker provider', () => {
+    const client = build({ EMBEDDING_DIM: 1024 });
+    expect(client.provider).toBe('worker');
+    expect(client.modelId).toBe('qwen3-embedding-4b@1024');
+    expect(
+      build({ EMBEDDING_PROVIDER: 'worker', EMBEDDING_DIM: 512 }).modelId,
+    ).toBe('qwen3-embedding-4b@512');
+  });
+
+  it('lets EMBEDDING_MODEL_ID override the worker model id', () => {
+    expect(build({ EMBEDDING_MODEL_ID: 'my-model@4' }).modelId).toBe(
+      'my-model@4',
+    );
+    expect(build({ EMBEDDING_MODEL_ID: '' }).modelId).toBe(
+      'qwen3-embedding-4b@4',
+    );
+  });
+
+  it('treats an empty EMBED_BATCH_SIZE (compose passes "" when unset) as unset', () => {
+    expect(build({ EMBED_BATCH_SIZE: '' }).batchSize).toBe(1);
+  });
+
+  it('rejects an unknown EMBEDDING_PROVIDER', () => {
+    expect(() => build({ EMBEDDING_PROVIDER: 'cloud' })).toThrow(
+      /EMBEDDING_PROVIDER must be "worker" or "api"/,
+    );
+  });
+
+  it('delegates to an injected provider', async () => {
+    const provider = {
+      name: 'api' as const,
+      modelId: 'x@1',
+      dim: 2,
+      batchSize: 2,
+      embedBatch: jest.fn((texts: string[]) =>
+        Promise.resolve(texts.map(() => [1, 0])),
+      ),
+    };
+    const client = new EmbeddingClient(
+      createConfigServiceMock() as unknown as ConfigService,
+      provider,
+    );
+
+    const out = await client.embed(['a', 'b', 'c'], true);
+
+    expect(out).toHaveLength(3);
+    expect(provider.embedBatch.mock.calls).toEqual([
+      [['a', 'b'], true],
+      [['c'], true],
+    ]);
+    expect(client.provider).toBe('api');
+    expect(client.modelId).toBe('x@1');
+  });
+
   it('defaults to 1024 dimensions', () => {
     expect(
       new EmbeddingClient(createConfigServiceMock() as unknown as ConfigService)
         .dim,
     ).toBe(1024);
+  });
+});
+
+describe('EmbeddingClient profile', () => {
+  const build = (overrides: Record<string, unknown> = {}) =>
+    new EmbeddingClient(
+      createConfigServiceMock({
+        EMBEDDING_DIM: 4,
+        ...overrides,
+      }) as unknown as ConfigService,
+    );
+  afterEach(() => jest.restoreAllMocks());
+
+  it('exposes the active profile, or null', () => {
+    expect(build().profile).toBeNull();
+    expect(build({ EMBEDDING_PROFILE: '' }).profile).toBeNull();
+    expect(build({ EMBEDDING_PROFILE: 'pc' }).profile).toBe('pc');
+  });
+
+  it('describes profile, provider, model id and origin, never a secret', () => {
+    expect(
+      build({
+        EMBEDDING_PROFILE: 'pc',
+        AI_WORKER_URL: 'http://192.168.1.50:8000/path',
+        AI_WORKER_TOKEN: 'tok-secret',
+      }).describe(),
+    ).toBe(
+      'Embedding profile: pc (provider worker, model id qwen3-embedding-4b@4, http://192.168.1.50:8000)',
+    );
+    const api = build({
+      EMBEDDING_PROFILE: 'api',
+      EMBEDDING_PROVIDER: 'api',
+      EMBEDDING_API_URL: 'https://openrouter.ai/api/v1',
+      EMBEDDING_API_KEY: 'sk-secret',
+      EMBEDDING_API_MODEL: 'qwen/qwen3-embedding-8b',
+    }).describe();
+    expect(api).toBe(
+      'Embedding profile: api (provider api, model id qwen/qwen3-embedding-8b@4, https://openrouter.ai)',
+    );
+    expect(api).not.toContain('sk-secret');
+    expect(build().describe()).toMatch(
+      /^Embedding profile: none \(provider worker/,
+    );
+  });
+
+  it('logs the line at startup, but not under NODE_ENV=test', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const client = build({ EMBEDDING_PROFILE: 'local' });
+    await client.onModuleInit(); // NODE_ENV=test under jest
+    expect(log).not.toHaveBeenCalled();
+
+    const env = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    try {
+      await client.onModuleInit();
+    } finally {
+      process.env.NODE_ENV = env;
+    }
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(/^Embedding profile: local \(provider worker/),
+    );
   });
 });

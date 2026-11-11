@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { chunkHtml } from '../pipeline/chunker';
 import { EmbeddingClient } from './embedding.client';
+import {
+  EmbeddingModelGuard,
+  LEGACY_EMBEDDING_MODEL,
+} from './embedding-model.guard';
 import type { EmbedDocumentJobData } from './queue.constants';
 
 export type EmbedDocumentResult =
@@ -19,10 +23,11 @@ export function toVectorLiteral(vector: number[]): string {
  *
  * Idempotent and safe against stale jobs:
  *  - a job whose `version` is not the document's current `publishedVersion` does nothing;
- *  - only chunks with a NULL embedding are embedded, so a retry resumes where it stopped;
+ *  - only chunks with a NULL embedding are embedded, so a retry resumes where it stopped (with
+ *    `reembedMismatched`, also chunks whose vector came from another model than the active one);
  *  - each batch is written with an UPDATE by chunk id, which affects nothing for chunks a newer
  *    publish has deleted in the meantime.
- * Errors from the AI worker propagate (EmbeddingError) so the queue can retry.
+ * Errors from the embedding provider propagate (EmbeddingError) so the queue can retry.
  */
 @Injectable()
 export class EmbedDocumentHandler {
@@ -31,6 +36,7 @@ export class EmbedDocumentHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly embeddings: EmbeddingClient,
+    private readonly modelGuard: EmbeddingModelGuard,
   ) {}
 
   async handle(data: EmbedDocumentJobData): Promise<EmbedDocumentResult> {
@@ -50,13 +56,26 @@ export class EmbedDocumentHandler {
       return { status: 'stale' };
     }
 
-    const pending = await this.prisma.$queryRaw<
-      { id: string; textContent: string }[]
-    >`
-      SELECT "id", "textContent" FROM "DocumentChunk"
-      WHERE "documentId" = ${documentId} AND "embedding" IS NULL
-      ORDER BY "chunkIndex"
-    `;
+    // Read once: the model recorded with a vector is the one that produced it, even if the
+    // configuration changes while this job runs.
+    const model = this.embeddings.modelId;
+    const pending = data.reembedMismatched
+      ? await this.prisma.$queryRaw<{ id: string; textContent: string }[]>`
+          SELECT "id", "textContent" FROM "DocumentChunk"
+          WHERE "documentId" = ${documentId}
+            AND ("embedding" IS NULL
+                 OR COALESCE("embeddingModel", ${LEGACY_EMBEDDING_MODEL}) <> ${model})
+          ORDER BY "chunkIndex"
+        `
+      : await this.prisma.$queryRaw<{ id: string; textContent: string }[]>`
+          SELECT "id", "textContent" FROM "DocumentChunk"
+          WHERE "documentId" = ${documentId} AND "embedding" IS NULL
+          ORDER BY "chunkIndex"
+        `;
+
+    // Warn (rate-limited, never throws) when the index already mixes in another model.
+    if (pending.length > 0)
+      await this.modelGuard.warnBeforeEmbedding(documentId);
 
     let embedded = 0;
     const size = this.embeddings.batchSize;
@@ -70,6 +89,7 @@ export class EmbedDocumentHandler {
         documentId,
         batch.map((chunk) => chunk.id),
         vectors,
+        model,
       );
       embedded += batch.length;
     }
@@ -87,15 +107,19 @@ export class EmbedDocumentHandler {
     return { status: 'done', embedded };
   }
 
-  /** pgvector columns are `Unsupported` in Prisma, so vectors are written with raw SQL. */
+  /**
+   * pgvector columns are `Unsupported` in Prisma, so vectors are written with raw SQL. The model
+   * id is written in the same statement, so a vector never exists without its model.
+   */
   private async storeBatch(
     documentId: string,
     ids: string[],
     vectors: number[][],
+    model: string,
   ): Promise<void> {
     await this.prisma.$executeRaw`
       UPDATE "DocumentChunk" AS c
-      SET "embedding" = v.vec::vector
+      SET "embedding" = v.vec::vector, "embeddingModel" = ${model}
       FROM unnest(${ids}::text[], ${vectors.map(toVectorLiteral)}::text[]) AS v(id, vec)
       WHERE c."id" = v.id AND c."documentId" = ${documentId}
     `;

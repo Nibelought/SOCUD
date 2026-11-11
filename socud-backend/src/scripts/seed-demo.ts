@@ -7,7 +7,7 @@
  *   npm run seed:demo -- --exclude ru               # leave one language out (or --langs en,uk)
  *   npm run seed:demo -- --topics programming,math  # only some topics
  *   npm run seed:demo -- --limit 12                 # small sample, mixed across languages/topics
- *   npm run seed:demo -- --embed                    # also vectorize (needs the AI worker running)
+ *   npm run seed:demo -- --embed                    # also vectorize (needs the AI worker, or EMBEDDING_PROVIDER=api)
  *   npm run seed:demo -- --embed=queue              # enqueue the embedding jobs for a running API
  *   npm run seed:demo -- --reset                    # delete earlier demo data first
  *   npm run seed:demo -- --if-missing               # do nothing (exit 0) when demo data exists
@@ -25,6 +25,7 @@ import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PASSWORD_MAX_BYTES } from '../auth/dto/register.dto';
 import { hashPassword } from '../auth/password';
+import { applyEmbeddingProfile } from '../config/embedding-profile';
 import { validateEnv } from '../config/env.validation';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EmbedDocumentHandler } from '../queue/embed-document.handler';
@@ -51,7 +52,8 @@ const HELP = `Usage: npm run seed:demo -- [options]
   --langs <langs>     use only these languages, e.g. --langs en,uk
   --topics <topics>   programming, math, finance (default: all)
   --limit <n>         at most n documents in total, mixed across languages and topics
-  --embed[=inline|queue]  vectorize published documents (default mode: inline, needs the AI worker;
+  --embed[=inline|queue]  vectorize published documents (default mode: inline, needs the AI worker
+                      or EMBEDDING_PROVIDER=api;
                       queue: enqueue jobs for a running API/worker). Default: no vectors
   --reset             delete earlier demo data (tagged @${DEMO_EMAIL_DOMAIN} / "${DEMO_SPACE_PREFIX}" spaces) first
   --if-missing        add nothing when demo data already exists (exit 0); mutually exclusive with --reset
@@ -73,8 +75,31 @@ function formatDuration(seconds: number): string {
   return `${Math.round(seconds / 60)} min`;
 }
 
+/** An environment value as a trimmed string ('' when unset or not a string). */
+function asTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 async function checkWorker(): Promise<void> {
-  const base = process.env.AI_WORKER_URL ?? 'http://127.0.0.1:8000';
+  // The same resolution the app's ConfigModule does: the active EMBEDDING_PROFILE wins.
+  let env: Record<string, unknown>;
+  let profile: string | null;
+  try {
+    ({ env, profile } = applyEmbeddingProfile(process.env));
+  } catch (err) {
+    throw new DemoSeedError(err instanceof Error ? err.message : String(err));
+  }
+  const via = profile ? ` (embedding profile ${profile})` : '';
+  const provider = asTrimmedString(env.EMBEDDING_PROVIDER).toLowerCase();
+  if (provider === 'api') {
+    // No worker involved; the embedding client validates the key/model when the app starts.
+    console.log(
+      `[seed:demo] EMBEDDING_PROVIDER=api${via}: texts of the demo documents will be sent to the embedding API (see README, "Using a hosted embedding API").`,
+    );
+    return;
+  }
+  const workerUrl = asTrimmedString(env.AI_WORKER_URL);
+  const base = workerUrl === '' ? 'http://127.0.0.1:8000' : workerUrl;
   const url = `${base.replace(/\/+$/, '')}/health`;
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
@@ -309,7 +334,7 @@ async function main(): Promise<void> {
       await checkWorker();
       console.log(
         `[seed:demo] Will embed ${plan.chunks.length} chunk(s); expect roughly ` +
-          `${formatDuration(plan.chunks.length * SECONDS_PER_CHUNK)} on a local MLX worker.`,
+          `${formatDuration(plan.chunks.length * SECONDS_PER_CHUNK)} on a local MLX worker (much faster with a GPU worker or an API).`,
       );
     }
     if (options.reset) await resetDemoData(prisma);

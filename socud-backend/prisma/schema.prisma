@@ -151,6 +151,11 @@ model DocumentChunk {
   // NULL until the embed-document job has stored the vector (Qwen3-Embedding, 1024 dims).
   embedding Unsupported("vector(1024)")?
 
+  // Id of the embedding model/vector space that produced `embedding` (EmbeddingClient.modelId, e.g.
+  // "qwen3-embedding-4b@1024"). NULL while embedding is NULL. Used to warn when the active model
+  // differs from the one the index was built with (see EmbeddingModelGuard).
+  embeddingModel String?
+
   // GENERATED ALWAYS AS (setweight(to_tsvector('russian', "textContent"), 'B')) STORED, see
   // migration 20261111090000_search_fts_trgm. Never written by the client (see Document.searchVector).
   searchVector Unsupported("tsvector")? @default(dbgenerated("setweight(to_tsvector('russian'::regconfig, COALESCE(\"textContent\", ''::text)), 'B'::\"char\")"))
@@ -161,6 +166,7 @@ model DocumentChunk {
   // vector_cosine_ops
   @@index([embedding], map: "DocumentChunk_embedding_hnsw_idx")
   @@index([documentId])
+  @@index([embeddingModel])
   @@index([searchVector], type: Gin, map: "DocumentChunk_searchVector_idx")
 }
 
