@@ -14,8 +14,16 @@ import {
 } from 'class-validator';
 
 import { LOG_LEVELS } from '../observability/logger.config';
+import {
+  DEFAULT_EMBEDDING_API_URL,
+  assessEmbeddingApiUrl,
+} from './embedding-api-url';
 
 export const NODE_ENVIRONMENTS = ['development', 'production', 'test'] as const;
+export const EMBEDDING_PROVIDERS = ['worker', 'api'] as const;
+
+/** The AI worker accepts at most this many texts per /embed call. */
+const WORKER_MAX_BATCH_SIZE = 32;
 
 const toBoolean = ({ value }: { value: unknown }): unknown => {
   if (typeof value !== 'string') return value;
@@ -90,13 +98,81 @@ export class EnvironmentVariables {
   @Min(500)
   EMBED_QUERY_TIMEOUT_MS: number = 10000;
 
-  /** Texts per /embed call when embedding documents (the worker accepts at most 32). */
+  /**
+   * Texts per embedding request when embedding documents. Unset: 1 for the worker (MLX is compute
+   * bound, see embedding.client), 16 for provider=api. The worker accepts at most 32; for
+   * provider=api it is capped by EMBEDDING_API_BATCH_SIZE.
+   */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(32)
-  EMBED_BATCH_SIZE: number = 1;
+  @Max(2048)
+  EMBED_BATCH_SIZE?: number;
+
+  /** Where embeddings come from: the SOCUD AI worker (default) or a hosted OpenAI-compatible API. */
+  @IsOptional()
+  @IsIn(EMBEDDING_PROVIDERS)
+  EMBEDDING_PROVIDER: (typeof EMBEDDING_PROVIDERS)[number] = 'worker';
+
+  /** provider=api: base URL; `/embeddings` is appended. https required unless the host is local/private. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_API_URL: string = DEFAULT_EMBEDDING_API_URL;
+
+  /** provider=api: bearer key. Required then. Never logged. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_API_KEY?: string;
+
+  /** provider=api: model id sent in the request, e.g. qwen/qwen3-embedding-4b. Required then. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_API_MODEL?: string;
+
+  /** provider=api: send `dimensions` in the request (only for models that support it); >= EMBEDDING_DIM. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  EMBEDDING_API_DIMENSIONS?: number;
+
+  /** provider=api: max inputs per HTTP request (the API's limit). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(2048)
+  EMBEDDING_API_BATCH_SIZE: number = 32;
+
+  /**
+   * provider=api: task text of the Qwen3 query prefix ("Instruct: {task}\nQuery:{query}"). Unset: the
+   * worker's default for qwen3-embedding models, none for others. `off` disables it.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_API_QUERY_INSTRUCTION?: string;
+
+  /** Declares the vector space for DocumentChunk.embeddingModel; default derived from provider and model. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_MODEL_ID?: string;
+
+  /** provider=api: optional OpenRouter attribution headers (HTTP-Referer, X-Title). */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_API_REFERER?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_API_TITLE?: string;
 
   /**
    * Search: semantic hits with a cosine similarity below this are dropped (the nearest chunks are
@@ -200,6 +276,56 @@ export class EnvironmentVariables {
   NODE_ENV: (typeof NODE_ENVIRONMENTS)[number] = 'development';
 }
 
+/** Rules that involve several variables (EMBEDDING_PROVIDER decides which ones apply). */
+function crossFieldProblems(env: EnvironmentVariables): string[] {
+  const problems: string[] = [];
+  if (env.EMBEDDING_PROVIDER === 'worker') {
+    if (
+      env.EMBED_BATCH_SIZE !== undefined &&
+      env.EMBED_BATCH_SIZE > WORKER_MAX_BATCH_SIZE
+    ) {
+      problems.push(
+        `  - EMBED_BATCH_SIZE: must not be greater than ${WORKER_MAX_BATCH_SIZE} for EMBEDDING_PROVIDER=worker`,
+      );
+    }
+    return problems;
+  }
+
+  if (!env.EMBEDDING_API_KEY) {
+    problems.push(
+      '  - EMBEDDING_API_KEY: required when EMBEDDING_PROVIDER=api (an OpenRouter key: https://openrouter.ai/keys)',
+    );
+  }
+  if (!env.EMBEDDING_API_MODEL) {
+    problems.push(
+      '  - EMBEDDING_API_MODEL: required when EMBEDDING_PROVIDER=api (e.g. qwen/qwen3-embedding-4b)',
+    );
+  }
+  const url = assessEmbeddingApiUrl(env.EMBEDDING_API_URL);
+  if (!url.ok) {
+    problems.push(`  - EMBEDDING_API_URL: ${url.error}`);
+  } else if (url.warning) {
+    console.warn(`[config] WARN: ${url.warning}`);
+  }
+  if (
+    env.EMBEDDING_API_DIMENSIONS !== undefined &&
+    env.EMBEDDING_API_DIMENSIONS < env.EMBEDDING_DIM
+  ) {
+    problems.push(
+      `  - EMBEDDING_API_DIMENSIONS: ${env.EMBEDDING_API_DIMENSIONS} is smaller than EMBEDDING_DIM=${env.EMBEDDING_DIM}; the API would return vectors that are too short`,
+    );
+  }
+  if (
+    env.EMBED_BATCH_SIZE !== undefined &&
+    env.EMBED_BATCH_SIZE > env.EMBEDDING_API_BATCH_SIZE
+  ) {
+    console.warn(
+      `[config] WARN: EMBED_BATCH_SIZE=${env.EMBED_BATCH_SIZE} exceeds EMBEDDING_API_BATCH_SIZE=${env.EMBEDDING_API_BATCH_SIZE}; ${env.EMBEDDING_API_BATCH_SIZE} texts per request will be used`,
+    );
+  }
+  return problems;
+}
+
 export function validateEnv(
   config: Record<string, unknown>,
 ): EnvironmentVariables {
@@ -222,6 +348,8 @@ export function validateEnv(
       (message) => `  - ${error.property}: ${message}`,
     ),
   );
+
+  if (problems.length === 0) problems.push(...crossFieldProblems(validated));
 
   if (problems.length > 0) {
     throw new Error(

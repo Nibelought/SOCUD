@@ -144,6 +144,60 @@ describe('EmbeddingClient', () => {
     ).rejects.toThrow(/1 embeddings for 2/);
   });
 
+  it('exposes provider and modelId for the default worker provider', () => {
+    const client = build({ EMBEDDING_DIM: 1024 });
+    expect(client.provider).toBe('worker');
+    expect(client.modelId).toBe('qwen3-embedding-4b@1024');
+    expect(
+      build({ EMBEDDING_PROVIDER: 'worker', EMBEDDING_DIM: 512 }).modelId,
+    ).toBe('qwen3-embedding-4b@512');
+  });
+
+  it('lets EMBEDDING_MODEL_ID override the worker model id', () => {
+    expect(build({ EMBEDDING_MODEL_ID: 'my-model@4' }).modelId).toBe(
+      'my-model@4',
+    );
+    expect(build({ EMBEDDING_MODEL_ID: '' }).modelId).toBe(
+      'qwen3-embedding-4b@4',
+    );
+  });
+
+  it('treats an empty EMBED_BATCH_SIZE (compose passes "" when unset) as unset', () => {
+    expect(build({ EMBED_BATCH_SIZE: '' }).batchSize).toBe(1);
+  });
+
+  it('rejects an unknown EMBEDDING_PROVIDER', () => {
+    expect(() => build({ EMBEDDING_PROVIDER: 'cloud' })).toThrow(
+      /EMBEDDING_PROVIDER must be "worker" or "api"/,
+    );
+  });
+
+  it('delegates to an injected provider', async () => {
+    const provider = {
+      name: 'api' as const,
+      modelId: 'x@1',
+      dim: 2,
+      batchSize: 2,
+      embedBatch: jest.fn((texts: string[]) =>
+        Promise.resolve(texts.map(() => [1, 0])),
+      ),
+    };
+    const client = new EmbeddingClient(
+      createConfigServiceMock() as unknown as ConfigService,
+      provider,
+    );
+
+    const out = await client.embed(['a', 'b', 'c'], true);
+
+    expect(out).toHaveLength(3);
+    expect(provider.embedBatch.mock.calls).toEqual([
+      [['a', 'b'], true],
+      [['c'], true],
+    ]);
+    expect(client.provider).toBe('api');
+    expect(client.modelId).toBe('x@1');
+  });
+
   it('defaults to 1024 dimensions', () => {
     expect(
       new EmbeddingClient(createConfigServiceMock() as unknown as ConfigService)

@@ -80,7 +80,7 @@ export class EmbeddingBackfillService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /** Same, but embeds in this process without Redis (needs only the AI worker). */
+  /** Same, but embeds in this process without Redis (needs only the embedding provider: the AI worker or the API). */
   async embedMissingInline(): Promise<BackfillResult> {
     return this.forEachPending(async (documentId, version) => {
       try {
