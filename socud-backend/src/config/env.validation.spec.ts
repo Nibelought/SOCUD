@@ -199,3 +199,115 @@ describe('validateEnv Swagger / session cookie settings', () => {
     );
   });
 });
+
+describe('validateEnv EMBEDDING_PROVIDER', () => {
+  const api = {
+    ...base,
+    EMBEDDING_PROVIDER: 'api',
+    EMBEDDING_API_KEY: 'sk-test',
+    EMBEDDING_API_MODEL: 'qwen/qwen3-embedding-4b',
+  };
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('defaults to the worker and needs no API settings', () => {
+    const env = validateEnv(base);
+    expect(env.EMBEDDING_PROVIDER).toBe('worker');
+    expect(env.EMBEDDING_API_URL).toBe('https://openrouter.ai/api/v1');
+    expect(env.EMBEDDING_API_BATCH_SIZE).toBe(32);
+    expect(env.EMBEDDING_API_KEY).toBeUndefined();
+  });
+
+  it('keeps EMBED_BATCH_SIZE unset by default and rejects > 32 for the worker', () => {
+    expect(validateEnv(base).EMBED_BATCH_SIZE).toBeUndefined();
+    expect(
+      validateEnv({ ...base, EMBED_BATCH_SIZE: '32' }).EMBED_BATCH_SIZE,
+    ).toBe(32);
+    expect(() => validateEnv({ ...base, EMBED_BATCH_SIZE: '33' })).toThrow(
+      /EMBED_BATCH_SIZE: must not be greater than 32/,
+    );
+  });
+
+  it('rejects an unknown provider', () => {
+    expect(() => validateEnv({ ...base, EMBEDDING_PROVIDER: 'cloud' })).toThrow(
+      /EMBEDDING_PROVIDER/,
+    );
+  });
+
+  it('accepts a complete api configuration', () => {
+    const env = validateEnv({ ...api, EMBEDDING_API_DIMENSIONS: '1024' });
+    expect(env.EMBEDDING_PROVIDER).toBe('api');
+    expect(env.EMBEDDING_API_DIMENSIONS).toBe(1024);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('requires the key and the model for provider=api, naming both', () => {
+    let message = '';
+    try {
+      validateEnv({ ...base, EMBEDDING_PROVIDER: 'api' });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(
+      /EMBEDDING_API_KEY: required when EMBEDDING_PROVIDER=api/,
+    );
+    expect(message).toMatch(
+      /EMBEDDING_API_MODEL: required when EMBEDDING_PROVIDER=api/,
+    );
+  });
+
+  it('treats empty API variables as unset', () => {
+    expect(() => validateEnv({ ...api, EMBEDDING_API_KEY: '' })).toThrow(
+      /EMBEDDING_API_KEY/,
+    );
+    expect(
+      validateEnv({ ...api, EMBEDDING_API_URL: '', EMBED_BATCH_SIZE: '' }),
+    ).toEqual(
+      expect.objectContaining({
+        EMBEDDING_API_URL: 'https://openrouter.ai/api/v1',
+      }),
+    );
+  });
+
+  it('rejects plain http to a public host and warns for a private one', () => {
+    expect(() =>
+      validateEnv({ ...api, EMBEDDING_API_URL: 'http://api.example.com/v1' }),
+    ).toThrow(/EMBEDDING_API_URL.*Use https/s);
+    validateEnv({ ...api, EMBEDDING_API_URL: 'http://192.168.1.5:8080/v1' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unencrypted'));
+    warn.mockClear();
+    validateEnv({ ...api, EMBEDDING_API_URL: 'http://127.0.0.1:8080/v1' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('rejects EMBEDDING_API_DIMENSIONS below EMBEDDING_DIM', () => {
+    expect(() =>
+      validateEnv({ ...api, EMBEDDING_API_DIMENSIONS: '512' }),
+    ).toThrow(
+      /EMBEDDING_API_DIMENSIONS: 512 is smaller than EMBEDDING_DIM=1024/,
+    );
+  });
+
+  it('allows bigger document batches for the api and warns above the API limit', () => {
+    expect(
+      validateEnv({ ...api, EMBED_BATCH_SIZE: '32' }).EMBED_BATCH_SIZE,
+    ).toBe(32);
+    validateEnv({
+      ...api,
+      EMBED_BATCH_SIZE: '64',
+      EMBEDDING_API_BATCH_SIZE: '16',
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('EMBEDDING_API_BATCH_SIZE=16'),
+    );
+  });
+
+  it('does not validate API settings when the provider is the worker', () => {
+    expect(() =>
+      validateEnv({ ...base, EMBEDDING_API_URL: 'http://api.example.com/v1' }),
+    ).not.toThrow();
+  });
+});

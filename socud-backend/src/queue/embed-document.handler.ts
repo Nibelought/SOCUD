@@ -22,7 +22,7 @@ export function toVectorLiteral(vector: number[]): string {
  *  - only chunks with a NULL embedding are embedded, so a retry resumes where it stopped;
  *  - each batch is written with an UPDATE by chunk id, which affects nothing for chunks a newer
  *    publish has deleted in the meantime.
- * Errors from the AI worker propagate (EmbeddingError) so the queue can retry.
+ * Errors from the embedding provider propagate (EmbeddingError) so the queue can retry.
  */
 @Injectable()
 export class EmbedDocumentHandler {

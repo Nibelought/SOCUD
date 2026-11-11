@@ -45,7 +45,8 @@ export class EmbeddingWorker implements OnModuleInit, OnModuleDestroy {
       (job) => this.process(job),
       {
         connection: this.connection,
-        // The local MLX model serves one request at a time anyway.
+        // The local MLX model serves one request at a time anyway; a hosted API (EMBEDDING_PROVIDER=api)
+        // takes several, see README "Using a hosted embedding API".
         concurrency: this.config.get<number>('EMBED_CONCURRENCY') ?? 1,
       },
     );
@@ -74,7 +75,7 @@ export class EmbeddingWorker implements OnModuleInit, OnModuleDestroy {
     try {
       return await this.handler.handle(job.data);
     } catch (err) {
-      // Permanent worker errors (422, wrong dimension, ...) must not burn the retry budget.
+      // Permanent provider errors (422, 401/402, wrong dimension, ...) must not burn the retry budget.
       if (err instanceof EmbeddingError && !err.retryable) {
         throw new UnrecoverableError(err.message);
       }
