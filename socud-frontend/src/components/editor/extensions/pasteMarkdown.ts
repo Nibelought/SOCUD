@@ -17,7 +17,7 @@ export const PasteMarkdown = Extension.create({
                         if (!editor) return false;
 
                         const { nodes } = editor.schema;
-                        // Динамически получаем зарегистрированные имена узлов
+                        // Look up the registered node names dynamically
                         const inlineNode = nodes.inlineMath || nodes.mathInline || nodes.math;
                         const blockNode = nodes.displayMath || nodes.blockMath || nodes.mathDisplay || inlineNode;
 
@@ -27,14 +27,14 @@ export const PasteMarkdown = Extension.create({
                         const blockAttrKey = mathAttrKey(blockNode);
                         const needsDisplayAttr = blockNode.name === inlineNode.name ? ' data-display="true"' : '';
 
-                        // 1. Экранируем HTML-сущности ДО замен
+                        // 1. Escape HTML entities BEFORE the replacements
                         let processedText = text
                             .replace(/&/g, '&amp;')
                             .replace(/</g, '&lt;')
                             .replace(/>/g, '&gt;')
                             .replace(/\r/g, '');
 
-                        // 2. ИЗОЛИРУЕМ ФОРМУЛЫ (защита от парсера)
+                        // 2. Isolate formulas (protects them from the markdown parser)
                         const mathBlocks: string[] = [];
                         const mathInlines: string[] =[];
 
@@ -48,11 +48,11 @@ export const PasteMarkdown = Extension.create({
                             return `__MATH_INLINE_${mathInlines.length - 1}__`;
                         });
 
-                        // 3. БЕЗОПАСНЫЙ МАРКДАУН (Группировка параграфов)
-                        // Разбиваем текст по двойному переносу строки на абзацы
+                        // 3. Safe markdown (paragraph grouping)
+                        // Split the text into paragraphs on double newlines
                         const paragraphs = processedText.split(/\n{2,}/);
                         const htmlParts = paragraphs.map(p => {
-                            // Обрабатываем блочные элементы
+                            // Handle block elements
                             if (/^### (.*)/.test(p)) return p.replace(/^### (.*)/, '<h3>$1</h3>');
                             if (/^## (.*)/.test(p)) return p.replace(/^## (.*)/, '<h2>$1</h2>');
                             if (/^# (.*)/.test(p)) return p.replace(/^# (.*)/, '<h1>$1</h1>');
@@ -63,7 +63,7 @@ export const PasteMarkdown = Extension.create({
                                 return `<ul>${listItems}</ul>`;
                             }
 
-                            // Обрабатываем инлайн-стили внутри обычных абзацев
+                            // Handle inline styles inside regular paragraphs
                             const parsed = p
                                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                                 .replace(/\*(.*?)\*/g, '<em>$1</em>')
@@ -71,20 +71,20 @@ export const PasteMarkdown = Extension.create({
                                 .replace(/`(.*?)`/g, '<code>$1</code>')
                                 .replace(/\n/g, '<br>');
 
-                            // Оборачиваем в <p> для сохранения целостности DOM
+                            // Wrap in <p> to keep the DOM well-formed
                             return `<p>${parsed}</p>`;
                         });
 
                         processedText = htmlParts.join('\n');
 
-                        // 4. ВСТАВЛЯЕМ ФОРМУЛЫ ЧЕРЕЗ <span>
-                        // Важно: Мы используем `<span>` даже для displayMath. Браузер не ломает параграфы при виде span.
-                        // Когда Tiptap прочитает data-type="displayMath", он сам безопасно вынесет его из параграфа в блочный вид.
+                        // 4. Insert formulas via <span>
+                        // We use `<span>` even for displayMath: the browser does not break paragraphs on a span.
+                        // When Tiptap reads data-type="displayMath" it safely lifts the node out of the paragraph into a block.
                         processedText = processedText.replace(/__MATH_BLOCK_(\d+)__/g, (_, id) => {
                             const latex = mathBlocks[Number(id)]
                                 .replace(/"/g, '&quot;')
                                 .replace(/\n/g, '&#10;');
-                            // Содержимое `$$${latex}$$` сохранит текст, если парсер Tiptap по какой-то причине сбойнёт
+                            // The `$$${latex}$$` content preserves the text if the Tiptap parser fails for any reason
                             return `<span data-type="${blockNode.name}" data-${blockAttrKey}="${latex}"${needsDisplayAttr}>$$${latex}$$</span>`;
                         });
 

@@ -17,7 +17,7 @@ export default function GraphVisualizer({ data }: { data: GraphData }) {
     const[dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const[isCentered, setIsCentered] = useState(false);
 
-    // FIX 1: Надежный расчет размеров через ResizeObserver
+    // Reliable size calculation via ResizeObserver
     useEffect(() => {
         if (!containerRef.current) return;
 
@@ -32,10 +32,10 @@ export default function GraphVisualizer({ data }: { data: GraphData }) {
         return () => observer.disconnect();
     },[]);
 
-    // FIX 2: Центрируем камеру только после того, как физический движок расставил узлы
+    // Center the camera only after the physics engine has placed the nodes
     const handleEngineStop = useCallback(() => {
         if (!isCentered && graphRef.current) {
-            graphRef.current.zoomToFit(800, 50); // Плавный зум 800ms с отступом 50px
+            graphRef.current.zoomToFit(800, 50); // smooth 800 ms zoom with 50 px padding
             setIsCentered(true);
         }
     }, [isCentered]);
@@ -52,10 +52,10 @@ export default function GraphVisualizer({ data }: { data: GraphData }) {
                     width={dimensions.width}
                     height={dimensions.height}
                     graphData={data}
-                    nodeAutoColorBy="group" // Раскраска по spaceId
+                    nodeAutoColorBy="group" // color by spaceId
                     nodeRelSize={6}
-                    d3VelocityDecay={0.3} // Затухание физики (чтобы узлы не дрожали бесконечно)
-                    onEngineStop={handleEngineStop} // Триггер центрирования камеры
+                    d3VelocityDecay={0.3} // physics damping (keeps nodes from jittering forever)
+                    onEngineStop={handleEngineStop} // triggers camera centering
                     onNodeClick={handleNodeClick}
                     nodeCanvasObjectMode={() => 'after'}
                     nodeCanvasObject={(node: NodeObject<GraphNode>, ctx, globalScale) => {

@@ -38,15 +38,15 @@ export default function EditorToolbar({ editor, openLatexEditor }: { editor: Edi
             .trim();
     };
 
-    // ✅ ОТКАЗОУСТОЙЧИВАЯ ВСТАВКА (работает даже если зарегистрирован только inlineMath)
+    // Fault-tolerant insertion (works even if only inlineMath is registered)
     const insertMath = (latex: string, isDisplay: boolean) => {
         if (!editor || !latex.trim()) return;
 
-        // 1. Очищаем LaTeX от конфликтных окружений
+        // 1. Strip conflicting environments from the LaTeX
         const cleanLatex = sanitizeLatex(latex);
         const { nodes } = editor.schema;
 
-        // 2. Ищем узлы
+        // 2. Look up the nodes
         const inlineNode = nodes.inlineMath || nodes.mathInline || nodes.math;
         const blockNode  = nodes.blockMath || nodes.displayMath || nodes.mathDisplay;
         const targetNode = isDisplay ? (blockNode || inlineNode) : inlineNode;
@@ -56,7 +56,7 @@ export default function EditorToolbar({ editor, openLatexEditor }: { editor: Edi
             return;
         }
 
-        // 3. Если блочный узел есть → вставляем напрямую с флагом display
+        // 3. If the block node exists, insert it directly with the display flag
         if (isDisplay && blockNode) {
             const attrKey = mathAttrKey(blockNode);
             editor.chain().focus().insertContent({
@@ -67,14 +67,14 @@ export default function EditorToolbar({ editor, openLatexEditor }: { editor: Edi
             return;
         }
 
-        // 4. Fallback для Display, если в схеме только inlineMath:
-        // Вставляем $$\n...\n$$ + пробел. Это гарантированно триггерит
-        // встроенное input-правило расширения, которое само создаст
-        // корректный display-узел с displayMode: true.
+        // 4. Display fallback when the schema only has inlineMath:
+        // Insert $$\n...\n$$ plus a space. This reliably triggers
+        // the extension's built-in input rule, which then creates
+        // a proper display node with displayMode: true.
         if (isDisplay) {
             editor.chain().focus().insertContent(`$$\n${cleanLatex}\n$$\n`).run();
         } else {
-            // Inline вставка
+            // Inline insertion
             const attrKey = mathAttrKey(targetNode);
             editor.chain().focus().insertContent({
                 type: targetNode.name,
@@ -123,11 +123,11 @@ export default function EditorToolbar({ editor, openLatexEditor }: { editor: Edi
             <button onClick={handleCodeBlock} className={toggleBtnClass(editor.isActive('codeBlock'))} title="Code Block"><Terminal className="w-4 h-4" /></button>
 
             <div className="w-px h-5 bg-slate-300 mx-1"></div>
-            {/* Кнопка открытия полноценного редактора */}
+            {/* Opens the full editor */}
             <button onClick={() => openLatexEditor()} className={toggleBtnClass(false)} title="Open LaTeX Editor">
                 <Sigma className="w-4 h-4" />
             </button>
-            {/* Кнопка быстрой панели */}
+            {/* Quick panel button */}
             <button onClick={() => setShowLatexPanel(!showLatexPanel)} className={`flex items-center gap-0.5 p-1.5 rounded-md transition-colors ${showLatexPanel ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'}`}>
                 <ChevronDown className="w-3 h-3" />
             </button>

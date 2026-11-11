@@ -13,7 +13,7 @@ import EmbeddingModelBanner from "@/components/admin/EmbeddingModelBanner";
 import { logout, sessionLostLoginUrl } from '@/lib/auth';
 import { api, type components } from '@/lib/api/client';
 
-// Типы данных с бэкенда (генерируются из openapi.json)
+// Backend data types (generated from openapi.json)
 type Space = components["schemas"]["SpaceWithCountDto"];
 type Activity = components["schemas"]["RecentDocumentDto"];
 
@@ -24,10 +24,10 @@ export default function DashboardPage() {
     const [activities, setActivities] = useState<Activity[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // FIX: Состояние для модального окна поиска
+    // State for the search modal
     const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-    // FIX: Добавление хоткея Ctrl+K / Cmd+K
+    // Ctrl+K / Cmd+K hotkey
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -53,7 +53,7 @@ export default function DashboardPage() {
             setUserName("User");
         }
 
-        // Параллельный запрос данных
+        // Fetch data in parallel
         Promise.all([
             api.GET('/space/my'),
             api.GET('/document/recent')
@@ -68,7 +68,7 @@ export default function DashboardPage() {
 
     }, [router]);
 
-    // Простой маппинг иконок в зависимости от длины названия (для визуального разнообразия)
+    // Simple icon mapping by title length (just for visual variety)
     const getSpaceStyle = (name: string) => {
         const char = name.length % 3;
         if (char === 0) return { icon: Shield, color: "text-blue-600", bg: "bg-blue-100" };
@@ -127,7 +127,7 @@ export default function DashboardPage() {
                         Welcome back, <span className="text-blue-700 capitalize">{userName}</span>!
                     </h1>
                     <div className="flex gap-2">
-                        {/* Новая кнопка графа */}
+                        {/* Graph button */}
                         <button
                             onClick={() => router.push('/graph')}
                             className="bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 px-4 py-2.5 rounded-md font-medium flex items-center gap-2 transition-colors shadow-sm"
@@ -189,7 +189,7 @@ export default function DashboardPage() {
                         ) : (
                             <div className="divide-y divide-slate-100">
                                 {activities.map((act) => {
-                                    const isCreated = act.updatedAt === act.createdBy; // Эвристика: если не обновлялся, значит создан
+                                    const isCreated = act.updatedAt === act.createdBy; // Heuristic: never updated means just created
                                     const actionText = isCreated ? "Created document" : "Updated document";
                                     const date = new Date(act.updatedAt).toLocaleDateString();
 
@@ -222,7 +222,7 @@ export default function DashboardPage() {
 
             </main>
 
-            {/* FIX: Внедрение поисковой модалки */}
+            {/* Search modal */}
             <SearchModal
                 isOpen={isSearchOpen}
                 onClose={() => setIsSearchOpen(false)}

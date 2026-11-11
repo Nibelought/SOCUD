@@ -9,7 +9,7 @@ import { api, type components } from '@/lib/api/client';
 import { sessionLostLoginUrl } from "@/lib/auth";
 import { graphTruncationNotice } from "@/lib/graphNotice";
 
-// КРИТИЧЕСКИ ВАЖНО: Отключаем SSR
+// Must disable SSR
 const DynamicGraph = dynamic(
     () => import("@/components/graph/GraphVisualizer"),
     { ssr: false, loading: () => <div className="flex justify-center items-center h-[80vh] text-slate-500"><Loader2 className="w-8 h-8 animate-spin" /></div> }
@@ -56,7 +56,7 @@ export default function KnowledgeGraphPage() {
                 </div>
             </header>
 
-            {/* ГРАФ */}
+            {/* Graph */}
             <main className="flex-1 relative">
                 {!loading && <DynamicGraph data={graphData} />}
                 {truncationNotice && (

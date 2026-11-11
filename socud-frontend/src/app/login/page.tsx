@@ -30,7 +30,7 @@ export default function LoginPage() {
                 throw new Error(apiErrorMessage(error, "Login failed"));
             }
 
-            // Refresh-токен приходит в httpOnly cookie; в localStorage хранится только access
+            // The refresh token arrives in an httpOnly cookie; only the access token is kept in localStorage
             setAccessToken(data.access_token);
 
             // Return to the page the proxy / session expiry sent us from (validated same-origin path).
