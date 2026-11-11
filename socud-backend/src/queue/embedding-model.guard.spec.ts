@@ -21,6 +21,7 @@ describe('EmbeddingModelGuard', () => {
   let guard: EmbeddingModelGuard;
   let warn: jest.SpyInstance;
   let now: number;
+  const warned = (n: number) => String((warn.mock.calls[n] as [unknown])[0]);
 
   const stored = (
     rows: { model: string; chunks: number; documents: number }[],
@@ -159,7 +160,7 @@ describe('EmbeddingModelGuard', () => {
       await guard.warnOnStartup();
 
       expect(warn).toHaveBeenCalledTimes(1);
-      const message = String(warn.mock.calls[0][0]);
+      const message = warned(0);
       expect(message).toContain(QWEN);
       expect(message).toContain(OPENAI);
       expect(message).toContain('120 chunks');
@@ -191,12 +192,12 @@ describe('EmbeddingModelGuard', () => {
     it('is rate-limited: one WARN per interval no matter how many documents are embedded', async () => {
       for (let i = 0; i < 50; i++) await guard.warnBeforeEmbedding(`doc-${i}`);
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(String(warn.mock.calls[0][0])).toContain('doc-0');
+      expect(warned(0)).toContain('doc-0');
 
       now += EMBED_WARN_INTERVAL_MS + 1;
       await guard.warnBeforeEmbedding('doc-later');
       expect(warn).toHaveBeenCalledTimes(2);
-      expect(String(warn.mock.calls[1][0])).toContain('doc-later');
+      expect(warned(1)).toContain('doc-later');
     });
 
     it('does not consume the rate limit while there is no mismatch', async () => {
