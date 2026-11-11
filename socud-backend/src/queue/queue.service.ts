@@ -80,7 +80,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   async enqueueEmbedDocument(data: EmbedDocumentJobData): Promise<boolean> {
     const queue = this.queue;
     if (!queue) return false;
-    const jobId = `embed-${data.documentId}-${data.version}`;
+    // A re-embed job gets its own id so it is not swallowed by a normal job for the same version.
+    const jobId = `embed-${data.documentId}-${data.version}${data.reembedMismatched ? '-reembed' : ''}`;
     try {
       await this.withTimeout(this.addJob(queue, jobId, data));
       return true;
