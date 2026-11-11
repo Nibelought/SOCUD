@@ -324,14 +324,21 @@ Per-text cosines of 0.98 or more and identical rankings support setting `EMBEDDI
 
 **Cost.** OpenRouter bills embedding models per input token; look up the model's price per million tokens on its page. A chunk (up to ~1800 characters) is roughly 400 to 700 tokens, so 1000 chunks are about 0.4 to 0.7 million tokens; every publish embeds only the chunks that changed, every search query embeds one short text, and a full re-embed costs the whole corpus once. There is no spending cap in SOCUD: set a credit limit on the key in OpenRouter, because a loop of large re-embeds spends real money. When credits run out the API answers 402; the jobs fail with a clear log line (`insufficient credits ... Top up`), stop retrying, and the periodic reconcile (`EMBED_RECONCILE_INTERVAL_MS`) picks the documents up again once credits are back.
 
-**Re-embedding after switching provider or model.** Vectors from different models (and, to a lesser degree, different precisions) must not be mixed: the cosine scores between them are meaningless. After a switch that changes the space (or when in doubt) clear the vectors and let the backfill refill them. Semantic search returns nothing until it has finished (keyword search keeps working):
+**Re-embedding after switching provider or model.** Vectors from different models (and, to a lesser degree, different precisions) must not be mixed: the cosine scores between them are meaningless. Each chunk records the model id that produced it, so after a switch that changes the id the backend logs a mismatch warning and admins see a banner on the dashboard (see "Switching embedding models"). Re-embed only the chunks of the old model, in place, so search keeps working while it runs:
+
+```bash
+npm run backfill:embeddings -- --reembed-mismatched            # enqueue jobs for a running API
+npm run backfill:embeddings -- --reembed-mismatched --inline   # or embed in this process, no Redis needed
+```
+
+If the model id did not change but you still want fresh vectors (e.g. a different precision of the same model), clear them and let the backfill refill them; semantic search returns nothing until it has finished (keyword search keeps working):
 
 ```sql
-UPDATE "DocumentChunk" SET "embedding" = NULL;
+UPDATE "DocumentChunk" SET "embedding" = NULL, "embeddingModel" = NULL;
 UPDATE "Document" SET "embeddedVersion" = NULL;
 ```
 
-then `npm run backfill:embeddings` in `socud-backend` (add `-- --inline` to embed in that process without Redis; otherwise a running backend consumes the jobs, or restarts and reconciles about 10 s after start). A different vector size also needs a migration of the `vector(1024)` column, which this change does not provide: keep `EMBEDDING_DIM=1024` (use `EMBEDDING_API_DIMENSIONS` or Matryoshka truncation to get there).
+then `npm run backfill:embeddings` in `socud-backend` (add `-- --inline` to embed in that process without Redis). A different vector size also needs a migration of the `vector(1024)` column, which this change does not provide: keep `EMBEDDING_DIM=1024` (use `EMBEDDING_API_DIMENSIONS` or Matryoshka truncation to get there).
 
 **Rate limits, retries and errors.** `429`, `5xx`, timeouts and network errors are retried: when the API sends `Retry-After` and the wait fits into the call's time budget (`EMBED_TIMEOUT_MS` for documents, `EMBED_QUERY_TIMEOUT_MS` for search queries; at most two waits of up to 30 s), the backend waits and repeats the request; otherwise the queue retries with its own backoff (5 attempts). Permanent errors are not retried and say what to fix: `400` (not an embedding model, unsupported `dimensions`, text too long), `401` (wrong, revoked or expired key), `402` (out of credits), `403` (no permission, or blocked region/content), `404` (wrong URL or model id). The key and the document texts are never written to logs or error messages (a key echoed back by the provider is masked).
 
