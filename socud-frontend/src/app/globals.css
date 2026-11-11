@@ -2,11 +2,11 @@
 @plugin "@tailwindcss/typography";
 @import 'tailwindcss/utilities';
 
-/* FIX: Темная тема для читаемости кода */
+/* Dark theme for code readability */
 @import 'highlight.js/styles/github-dark.css';
 @import 'katex/dist/katex.min.css';
 
-/* Минималистичные курсоры соавторов */
+/* Minimal collaborator cursors */
 .collaboration-cursor__caret {
     border-left: 2px solid #0d0d0d;
     border-right: 2px solid #0d0d0d;
@@ -38,11 +38,11 @@
 }
 
 /* =========================================
-   СТРОГИЕ СТИЛИ РЕДАКТОРА (Overriding Tailwind Preflight)
+   Strict editor styles (overriding Tailwind Preflight)
    ========================================= */
 .ProseMirror {
     outline: none !important;
-    color: #1e293b; /* Темно-синий/серый для основного текста */
+    color: #1e293b; /* dark blue/gray for body text */
 }
 
 .ProseMirror h1 {
@@ -88,20 +88,20 @@
     font-style: italic;
 }
 
-/* Внутристрочный код (Inline Code) */
+/* Inline code */
 .ProseMirror code {
     background-color: #f1f5f9;
-    color: #db2777; /* Розовый для выделения на фоне текста */
+    color: #db2777; /* pink to stand out from the text */
     padding: 0.2em 0.4em;
     border-radius: 0.25rem;
     font-size: 0.9em;
     font-family: monospace;
 }
 
-/* Многострочный блок кода (Code Block) */
+/* Multi-line code block */
 .ProseMirror pre {
-    background: #0d1117; /* Глубокий темный фон */
-    color: #c9d1d9; /* Светло-серый текст */
+    background: #0d1117; /* deep dark background */
+    color: #c9d1d9; /* light gray text */
     padding: 1rem;
     border-radius: 0.5rem;
     font-family: monospace;
@@ -110,7 +110,7 @@
     margin-bottom: 1em;
 }
 
-/* Сброс стилей для inline-code внутри блока кода */
+/* Reset inline-code styles inside a code block */
 .ProseMirror pre code {
     background: transparent;
     color: inherit;
@@ -119,7 +119,7 @@
 }
 
 /* =========================================
-   GAPCURSOR (Курсор между двумя блоками)
+   GAPCURSOR (cursor between two blocks)
    ========================================= */
 .ProseMirror-gapcursor {
     display: none;
@@ -135,7 +135,7 @@
     top: -2px;
     width: 100%;
     max-width: 40px;
-    border-top: 2px solid #3b82f6; /* Синяя линия для заметности */
+    border-top: 2px solid #3b82f6; /* blue line for visibility */
     animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
 }
 
@@ -148,7 +148,7 @@
 }
 
 /* =========================================
-   УЛУЧШЕННЫЙ UX ДЛЯ ФОРМУЛ (KaTeX + Tiptap)
+   Improved formula UX (KaTeX + Tiptap)
    ========================================= */
 .ProseMirror .math-inline {
     background: #f8fafc;
@@ -193,7 +193,7 @@
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
-/* Фикс рендеринга KaTeX внутри Tiptap */
+/* KaTeX rendering fix inside Tiptap */
 .katex { font-size: 1.05em !important; }
 .katex-display { margin: 0 !important; }
 .ProseMirror .katex-error {
@@ -205,7 +205,7 @@
     border-radius: 4px;
 }
 
-/* Улучшенный скролл для LaTeX-панели */
+/* Better scrolling for the LaTeX panel */
 .max-h-96::-webkit-scrollbar { width: 6px; }
 .max-h-96::-webkit-scrollbar-track { background: transparent; }
 .max-h-96::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -237,7 +237,7 @@
     opacity: 1;
 }
 
-/* Корректный display-режим для формул в Tiptap */
+/* Correct display mode for formulas in Tiptap */
 .ProseMirror .math-display,
 .ProseMirror [class*="math"][display="true"],
 .ProseMirror .math-display-fallback {
@@ -250,7 +250,7 @@
     border-radius: 6px !important;
 }
 
-/* KaTeX внутри блочных формул не должен иметь лишних отступов */
+/* KaTeX inside block formulas must not have extra margins */
 .ProseMirror .math-display .katex-display,
 .ProseMirror .math-display-fallback .katex-display {
     margin: 0 !important;
@@ -258,7 +258,7 @@
 }
 
 /* =========================================
-   ТИПОГРАФИКА РЕДАКТОРА (Фикс h3 и hr)
+   Editor typography (h3 and hr fixes)
    ========================================= */
 .ProseMirror h3 {
     font-size: 1.5em !important;
@@ -276,14 +276,14 @@
     width: 100% !important;
 }
 
-/* Фикс отступов для списков при вставке */
+/* List indentation fix for pasted content */
 .ProseMirror li {
     margin-left: 1.5em !important;
     list-style-type: disc !important;
 }
 
 /* =========================================
-   ФИКС ТИПОГРАФИКИ ДЛЯ СТРАНИЦЫ ПРОСМОТРА
+   Typography fixes for the view page
    ========================================= */
 .prose h1 { @apply text-3xl font-bold mt-8 mb-4 text-slate-900; }
 .prose h2 { @apply text-2xl font-bold mt-6 mb-3 text-slate-800; }
@@ -316,6 +316,6 @@
 
 .prose a { @apply text-blue-600 underline hover:text-blue-800; }
 
-/* KaTeX внутри prose */
+/* KaTeX inside prose */
 .prose .katex { font-size: 1.05em !important; }
 .prose .katex-display { @apply my-6 overflow-x-auto; }

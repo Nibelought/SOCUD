@@ -32,7 +32,7 @@ export default function DocumentPage() {
         try {
             const payload = JSON.parse(atob(storedToken.split('.')[1]));
             setUserName(payload.email.split('@')[0]);
-            setCurrentUserId(payload.sub); // ← Извлекаем ID пользователя
+            setCurrentUserId(payload.sub); // extract the user ID
         } catch {
             setUserName(`User-${Math.floor(Math.random() * 1000)}`);
         }
@@ -45,7 +45,7 @@ export default function DocumentPage() {
     ).toString(16).padEnd(6, '0');
 
     return (
-        // ✅ Фиксированная высота экрана + flex для растягивания редактора
+        // Fixed screen height + flex so the editor stretches
         <div className="h-screen bg-slate-100 p-4 flex flex-col overflow-hidden">
             <div className="max-w-7xl mx-auto w-full flex flex-col h-full">
                 <div className="mb-3 flex items-center justify-between shrink-0">
@@ -57,7 +57,7 @@ export default function DocumentPage() {
                     </span>
                 </div>
 
-                {/* Контейнер редактора занимает всё оставшееся пространство */}
+                {/* The editor container takes all remaining space */}
                 <div className="flex-1 min-h-0">
                     <DynamicEditor
                         documentId={documentId}

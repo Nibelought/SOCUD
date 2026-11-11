@@ -61,7 +61,7 @@ export class AuthService {
     try {
       return await this.prisma.user.create({
         data: { email, passwordHash },
-        select: { id: true, email: true }, // Не возвращаем хэш пароля клиенту
+        select: { id: true, email: true }, // never return the password hash to the client
       });
     } catch (err) {
       if (

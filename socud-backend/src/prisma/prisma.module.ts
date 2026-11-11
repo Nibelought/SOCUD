@@ -4,6 +4,6 @@ import { PrismaService } from './prisma.service';
 @Global()
 @Module({
   providers: [PrismaService],
-  exports: [PrismaService], // Экспортируем для Auth, Space, Document модулей
+  exports: [PrismaService], // used by the Auth, Space and Document modules
 })
 export class PrismaModule {}

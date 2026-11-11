@@ -11,7 +11,7 @@ import { sessionLostLoginUrl } from "@/lib/auth";
 export default function CreateSpacePage() {
     const router = useRouter();
     const [name, setName] = useState("");
-    const[description, setDescription] = useState(""); // FIX: Состояние для описания
+    const[description, setDescription] = useState(""); // description state
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
@@ -26,7 +26,7 @@ export default function CreateSpacePage() {
         try {
             // Bearer + refresh-on-401 are handled by the client
             const { response, error } = await api.POST("/space", {
-                body: { name, description }, // FIX: Передаем description (без userId!)
+                body: { name, description }, // pass description (no userId)
             });
 
             if (!response.ok) {
@@ -71,7 +71,7 @@ export default function CreateSpacePage() {
                         />
                     </div>
 
-                    {/* FIX: Поле Description */}
+                    {/* Description field */}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Description (Optional)</label>
                         <textarea

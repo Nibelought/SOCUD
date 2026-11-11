@@ -15,7 +15,7 @@ import { createMathDoubleClickExtension } from './extensions/mathDoubleClick';
 import type { ActiveUser } from './useCollaboration';
 import { api } from "@/lib/api/client";
 
-// --- ВНУТРЕННИЙ РЕДАКТОР ---
+// --- Inner editor ---
 export default function EditorInner({ provider, ydoc, userName, userColor, activeUsers, currentUserId }: {
     provider: HocuspocusProvider;
     ydoc: Y.Doc;
@@ -26,7 +26,7 @@ export default function EditorInner({ provider, ydoc, userName, userColor, activ
 }) {
     const router = useRouter();
     const [isEditing, setIsEditing] = useState(true);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false); // ← Состояние модалки
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false); // modal state
 
     const [latexModal, setLatexModal] = useState({
         isOpen: false,
@@ -36,12 +36,12 @@ export default function EditorInner({ provider, ydoc, userName, userColor, activ
         nodePos: undefined as number | undefined
     });
 
-    // ✅ Стабильный callback для расширения (предотвращает пересоздание редактора)
+    // Stable callback for the extension (prevents recreating the editor)
     const handleMathDoubleClick = useCallback((latex: string, isDisplay: boolean, pos: number) => {
         setLatexModal({ isOpen: true, initialLatex: latex, isDisplay, isEditing: true, nodePos: pos });
     }, []);
 
-    // ✅ Мемоизируем расширение
+    // Memoize the extension
     const MathDoubleClickEdit = useMemo(() => createMathDoubleClickExtension(handleMathDoubleClick), [handleMathDoubleClick]);
 
 
@@ -85,7 +85,7 @@ export default function EditorInner({ provider, ydoc, userName, userColor, activ
 
     return (
         <div className="flex flex-col h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            {/* ВЕРХНЯЯ ПАНЕЛЬ */}
+            {/* Top bar */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -102,7 +102,7 @@ export default function EditorInner({ provider, ydoc, userName, userColor, activ
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {/* ✅ КНОПКА SETTINGS */}
+                    {/* Settings button */}
                     <button
                         onClick={() => setIsSettingsOpen(true)}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
@@ -129,7 +129,7 @@ export default function EditorInner({ provider, ydoc, userName, userColor, activ
 
             {isEditing && <EditorToolbar editor={editor} openLatexEditor={openLatexEditor} />}
 
-            {/* ✅ ХОЛСТ РЕДАКТОРА: Растянут на всю высоту с корректным скроллом */}
+            {/* Editor canvas: full height with correct scrolling */}
             <div className={`flex-1 overflow-y-auto p-8 ${!isEditing ? 'bg-slate-50/50' : ''}`}>
                 <EditorContent
                     editor={editor}
@@ -137,7 +137,7 @@ export default function EditorInner({ provider, ydoc, userName, userColor, activ
                 />
             </div>
 
-            {/* ✅ МОДАЛЬНОЕ ОКНО ДОСТУПА */}
+            {/* Access modal */}
             <AccessManagerModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}

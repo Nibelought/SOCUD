@@ -9,7 +9,7 @@ interface EditorProps {
     token: string;
     userName: string;
     userColor: string;
-    currentUserId: string; // ← Новое поле
+    currentUserId: string; // ID of the current user
 }
 
 export default function DocumentEditor({ documentId, token, userName, userColor, currentUserId }: EditorProps) {

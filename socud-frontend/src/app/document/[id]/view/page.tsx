@@ -49,13 +49,13 @@ export default function DocumentViewPage() {
     useEffect(() => {
         if (!doc?.contentHtml || !articleRef.current) return;
 
-        // Откладываем выполнение на следующий цикл отрисовки (Event Loop),
-        // чтобы браузер гарантированно построил DOM-дерево из innerHTML
+        // Defer to the next render tick (event loop)
+        // so the browser has certainly built the DOM tree from innerHTML
         const timer = setTimeout(() => {
             const container = articleRef.current;
             if (!container) return;
 
-            // --- ПРОХОД 1: Обработка официальных узлов Tiptap ---
+            // --- Pass 1: official Tiptap nodes ---
             const mathNodes = container.querySelectorAll(
                 '[data-type="inlineMath"], [data-type="displayMath"], [data-type="blockMath"], .math-inline, .math-display, .tiptap-math, [latex], [data-latex]'
             );
@@ -82,7 +82,7 @@ export default function DocumentViewPage() {
                 }
             });
 
-            // --- ПРОХОД 2: Обработка "сырого" текста (Fallback) ---
+            // --- Pass 2: raw text (fallback) ---
             const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
             const textNodes: Text[] =[];
             let node;
@@ -128,9 +128,9 @@ export default function DocumentViewPage() {
 
                 textNode.replaceWith(fragment);
             });
-        }, 20); // 20 мс достаточно для завершения Paint/Layout операции браузера
+        }, 20); // 20 ms is enough for the browser to finish paint/layout
 
-        return () => clearTimeout(timer); // Очистка таймера при размонтировании
+        return () => clearTimeout(timer); // clear the timer on unmount
     },[doc?.contentHtml]);
 
     if (loading) return (

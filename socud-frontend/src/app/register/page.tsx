@@ -27,7 +27,7 @@ export default function RegisterPage() {
                 throw new Error(apiErrorMessage(error, "Registration failed"));
             }
 
-            // После успешной регистрации перенаправляем на логин
+            // After a successful registration redirect to login
             router.push("/login");
         } catch (err) {
             setError(caughtMessage(err));

@@ -39,7 +39,7 @@ describe('DocumentService Access Control', () => {
     jest.resetAllMocks();
   });
 
-  // Вспомогательная функция для генерации мока документа
+  // Helper that builds a mock document
   const mockDocumentResult = (
     spaceRole?: Role,
     docRole?: Role,
@@ -63,7 +63,7 @@ describe('DocumentService Access Control', () => {
 
       const result = await service.findOne('doc-uuid', 'user-uuid');
       expect(result).toBeDefined();
-      expect(result).not.toHaveProperty('members'); // Проверка Clean Code (деструктуризации)
+      expect(result).not.toHaveProperty('members'); // destructuring must not leak members
     });
 
     it('should throw NotFoundException if document does not exist', async () => {
@@ -116,7 +116,7 @@ describe('DocumentService Access Control', () => {
     });
 
     it('ROLE ESCALATION: should ALLOW update if user is Space VIEWER but has Document EDITOR override', async () => {
-      // Пользователь VIEWER в пространстве, но ему точечно дали EDITOR для этого документа
+      // VIEWER in the space, but granted EDITOR on this document specifically
       mockPrisma.document.findUnique.mockResolvedValue(
         mockDocumentResult(Role.VIEWER, Role.EDITOR),
       );
@@ -130,7 +130,7 @@ describe('DocumentService Access Control', () => {
     });
 
     it('ROLE DEMOTION: should DENY update if user is Space EDITOR but has Document VIEWER override', async () => {
-      // Пользователь EDITOR в пространстве, но его права точечно урезали до VIEWER для документа
+      // EDITOR in the space, but restricted to VIEWER on this document specifically
       mockPrisma.document.findUnique.mockResolvedValue(
         mockDocumentResult(Role.EDITOR, Role.VIEWER),
       );
@@ -169,14 +169,13 @@ describe('DocumentService Access Control', () => {
   });
 
   // =====================================================================
-  // БЛОК TDD: Тесты для фичей, которые заявлены в требованиях (isArchived, isSystemAdmin)
-  // Если тесты ниже падают, значит нужно обновить document.service.ts!
+  // Core requirements: isArchived and isSystemAdmin behaviour
   // =====================================================================
   describe('TDD: Missing Core Features (Phase 1 Requirements)', () => {
     // Rule: an archived document is in the trash and returns 404 for everyone,
     // including space OWNERs and system admins.
     it('should throw NotFoundException if document isArchived (Soft Delete)', async () => {
-      // Мокаем документ, который существует, пользователь OWNER, но документ в архиве
+      // The document exists and the user is OWNER, but the document is archived
       mockPrisma.document.findUnique.mockResolvedValue(
         mockDocumentResult(Role.OWNER, undefined, true),
       );
@@ -211,13 +210,12 @@ describe('DocumentService Access Control', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    // РАСКОММЕНТИРУЙТЕ ЭТОТ ТЕСТ, КОГДА ДОБАВИТЕ ЛОГИКУ isSystemAdmin
     it('should allow FULL access if user isSystemAdmin, even without Space/Document roles', async () => {
-      // Документ без прав (пустые members)
+      // Document without any grants (empty members)
       mockPrisma.document.findUnique.mockResolvedValue(
         mockDocumentResult(undefined, undefined, false),
       );
-      // Имитируем, что Prisma возвращает флаг isSystemAdmin: true
+      // Simulate Prisma returning isSystemAdmin: true
       mockPrisma.user.findUnique.mockResolvedValue({
         id: 'admin-uuid',
         isSystemAdmin: true,

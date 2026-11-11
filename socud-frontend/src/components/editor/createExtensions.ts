@@ -32,15 +32,15 @@ export function createEditorExtensions({ ydoc, provider, userName, userColor, ma
             history: false,
             codeBlock: false,
             // `inputRules` is not in the typed options; spread keeps runtime config identical.
-            heading: { ...({ inputRules: false } as object) },       // ← Делегируем MarkdownShortcuts
-            horizontalRule: { ...({ inputRules: false } as object) } // ← Делегируем MarkdownShortcuts
+            heading: { ...({ inputRules: false } as object) },       // delegated to MarkdownShortcuts
+            horizontalRule: { ...({ inputRules: false } as object) } // delegated to MarkdownShortcuts
         }),
         Markdown,
         MarkdownShortcuts,
         PasteMarkdown,
         MathExtension.configure({
-            evaluation: false, // Безопасность: отключаем выполнение JS внутри формул
-            // Включение авто-преобразования при вводе $...$ + пробел
+            evaluation: false, // security: disable JS evaluation inside formulas
+            // Enable auto-conversion when typing $...$ followed by a space
             ...({ addInputRules: true, addDisplayMath: true } as object), // not in typed options; kept as-is at runtime
         }),
         CodeBlockLowlight.configure({ lowlight }),

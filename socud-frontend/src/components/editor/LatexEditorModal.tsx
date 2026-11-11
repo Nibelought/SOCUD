@@ -73,10 +73,10 @@ export default function LatexEditorModal({ isOpen, onClose, editor, initialLatex
 
         if (isEditing && nodePos !== undefined) {
             try {
-                // Пытаемся обновить существующий узел по сохранённой позиции
+                // Try to update the existing node at the saved position
                 editor.chain().focus().setNodeSelection(nodePos).updateAttributes(targetNode.name, attrs).run();
             } catch {
-                // Fallback: если позиция сместилась из-за Yjs-синхронизации, вставляем новый узел
+                // Fallback: if the position shifted due to Yjs sync, insert a new node
                 console.warn('[Math] Position shifted during collaboration. Inserting new node.');
                 editor.chain().focus().insertContent({ type: targetNode.name, attrs }).run();
             }

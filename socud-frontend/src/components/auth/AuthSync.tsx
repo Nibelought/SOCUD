@@ -13,9 +13,9 @@ export default function AuthSync() {
     useEffect(() => {
         let cancelled = false;
 
-        // 1. Проверка при первом рендере (например, после перезагрузки страницы)
-        // Если access отсутствует или протух — одна попытка обновить его по refresh-cookie,
-        // и только если она не удалась — принудительный выход.
+        // 1. Check on first render (e.g. after a page reload)
+        // If the access token is missing or expired, try once to refresh it via the refresh cookie,
+        // and force a logout only if that fails.
         if (!PUBLIC_PATHS.includes(pathname)) {
             const access = getAccessToken();
             if (!access || isTokenExpired(access)) {
@@ -27,11 +27,11 @@ export default function AuthSync() {
             }
         }
 
-        // 2. Синхронизация между вкладками
-        // Событие storage срабатывает ТОЛЬКО в других вкладках при изменении localStorage
+        // 2. Cross-tab sync
+        // The storage event fires ONLY in other tabs when localStorage changes
         const handleStorage = (e: StorageEvent) => {
             if (e.key === TOKEN_KEY && !e.newValue) {
-                // Пользователь вышел в другой вкладке → выходим здесь
+                // The user logged out in another tab, so log out here
                 clearTokens();
                 router.push(sessionLostLoginUrl());
             }
@@ -44,6 +44,6 @@ export default function AuthSync() {
         };
     }, [router, pathname]);
 
-    // Компонент ничего не рендерит, только выполняет side-effects
+    // Renders nothing, only runs side effects
     return null;
 }
