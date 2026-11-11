@@ -8,6 +8,10 @@ import type { App } from 'supertest/types';
 import { JwtStrategy } from './jwt.strategy';
 import { SpaceController } from '../../space/space.controller';
 import { SpaceService } from '../../space/space.service';
+import { DocumentController } from '../../document/document.controller';
+import { DocumentService } from '../../document/document.service';
+import { SearchService } from '../../search/search.service';
+import { Role } from '@prisma/client';
 import { PermissionService } from '../../permission/permission.service';
 import { RoleGuard } from '../../permission/role.guard';
 import { requestMemoMiddleware } from '../../permission/request-memo';
@@ -21,6 +25,7 @@ import {
 const m = (fn: unknown) => fn as jest.Mock;
 
 const USER = 'user-1';
+const DOC = '3f6d6b8e-0b0a-4c43-9d5c-0d6f1d2a9a11';
 const SPACE = '5a1d0c2e-7b3f-4e8a-9c64-1f2e3d4c5b6a';
 
 /**
@@ -33,6 +38,7 @@ describe('JwtStrategy and the per-request admin flag', () => {
   let prisma: jest.Mocked<PrismaService>;
   let token: string;
   const getMembers = jest.fn();
+  const findOne = jest.fn();
 
   const setUser = (isSystemAdmin: boolean) =>
     m(prisma.user.findUnique).mockResolvedValue({
@@ -48,6 +54,7 @@ describe('JwtStrategy and the per-request admin flag', () => {
   beforeEach(async () => {
     prisma = createPrismaServiceMock();
     getMembers.mockReset().mockResolvedValue([]);
+    findOne.mockReset();
     m(prisma.spaceMember.findUnique).mockResolvedValue(null); // not a member
 
     const moduleRef = await Test.createTestingModule({
@@ -55,7 +62,7 @@ describe('JwtStrategy and the per-request admin flag', () => {
         PassportModule,
         JwtModule.register({ secret: String(TEST_ENV.JWT_SECRET) }),
       ],
-      controllers: [SpaceController],
+      controllers: [SpaceController, DocumentController],
       providers: [
         JwtStrategy,
         RoleGuard,
@@ -63,6 +70,8 @@ describe('JwtStrategy and the per-request admin flag', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: createConfigServiceMock() },
         { provide: SpaceService, useValue: { getMembers } },
+        { provide: DocumentService, useValue: { findOne } },
+        { provide: SearchService, useValue: {} },
       ],
     }).compile();
 
@@ -118,5 +127,29 @@ describe('JwtStrategy and the per-request admin flag', () => {
     setUser(false);
     await expect(permissions.isSystemAdmin(USER)).resolves.toBe(false);
     expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('GET /document/:id costs 2 queries (user row + document row) although guard and service both check', async () => {
+    setUser(false);
+    m(prisma.document.findUnique).mockResolvedValue({
+      id: DOC,
+      isArchived: false,
+      members: [],
+      space: { members: [{ userId: USER, role: Role.VIEWER }] },
+    });
+    // What DocumentService.findOne does first: its own defence-in-depth check.
+    const permissions = app.get(PermissionService);
+    findOne.mockImplementation(async (id: string, userId: string) => {
+      await permissions.assertDocumentRole(userId, id, Role.VIEWER);
+      return { id };
+    });
+
+    const res = await request(app.getHttpServer() as App)
+      .get(`/document/${DOC}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1); // JwtStrategy only
+    expect(prisma.document.findUnique).toHaveBeenCalledTimes(1); // RoleGuard; service reuses it
   });
 });
