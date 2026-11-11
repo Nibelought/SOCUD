@@ -162,8 +162,14 @@ model DocumentChunk {
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  // HNSW
-  // vector_cosine_ops
+  // The real index is an HNSW index with vector_cosine_ops (m = 16, ef_construction = 64), created
+  // by hand in the migrations (20260427170115_init_hnsw, recreated in 20261110155014_pipeline_vectors_versions).
+  // Prisma 7.7 cannot express it: `type: Hnsw` is rejected ("Unknown index type") and
+  // `ops: raw("vector_cosine_ops")` without a type declares a btree index, which makes
+  // `migrate dev` DROP the HNSW index and create a btree one. Keep this plain declaration:
+  // Prisma matches indexes by name and columns only, so it sees no drift, and removing the line
+  // would make it drop the index. Verified with `prisma migrate diff --from-migrations
+  // prisma/migrations --to-schema prisma/schema.prisma` (empty). Re-check after upgrading Prisma.
   @@index([embedding], map: "DocumentChunk_embedding_hnsw_idx")
   @@index([documentId])
   @@index([embeddingModel])
