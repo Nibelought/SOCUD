@@ -25,6 +25,7 @@ import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PASSWORD_MAX_BYTES } from '../auth/dto/register.dto';
 import { hashPassword } from '../auth/password';
+import { applyEmbeddingProfile } from '../config/embedding-profile';
 import { validateEnv } from '../config/env.validation';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EmbedDocumentHandler } from '../queue/embed-document.handler';
@@ -75,14 +76,27 @@ function formatDuration(seconds: number): string {
 }
 
 async function checkWorker(): Promise<void> {
-  if (process.env.EMBEDDING_PROVIDER?.trim().toLowerCase() === 'api') {
+  // The same resolution the app's ConfigModule does: the active EMBEDDING_PROFILE wins.
+  let env: Record<string, unknown>;
+  let profile: string | null;
+  try {
+    ({ env, profile } = applyEmbeddingProfile(process.env));
+  } catch (err) {
+    throw new DemoSeedError(err instanceof Error ? err.message : String(err));
+  }
+  const via = profile ? ` (embedding profile ${profile})` : '';
+  const provider = String(env.EMBEDDING_PROVIDER ?? '')
+    .trim()
+    .toLowerCase();
+  if (provider === 'api') {
     // No worker involved; the embedding client validates the key/model when the app starts.
     console.log(
-      '[seed:demo] EMBEDDING_PROVIDER=api: texts of the demo documents will be sent to the embedding API (see README, "Using a hosted embedding API").',
+      `[seed:demo] EMBEDDING_PROVIDER=api${via}: texts of the demo documents will be sent to the embedding API (see README, "Using a hosted embedding API").`,
     );
     return;
   }
-  const base = process.env.AI_WORKER_URL ?? 'http://127.0.0.1:8000';
+  const workerUrl = String(env.AI_WORKER_URL ?? '').trim();
+  const base = workerUrl === '' ? 'http://127.0.0.1:8000' : workerUrl;
   const url = `${base.replace(/\/+$/, '')}/health`;
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });

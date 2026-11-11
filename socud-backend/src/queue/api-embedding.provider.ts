@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DEFAULT_EMBEDDING_API_URL } from '../config/embedding-api-url';
+import { parseProviderRouting } from '../config/embedding-api-routing';
 import { EmbeddingConfigError, EmbeddingError } from './embedding.error';
 import { mrlTruncate, prepareText } from './embedding-text';
 import {
@@ -76,6 +77,7 @@ export class ApiEmbeddingProvider implements EmbeddingProvider {
     // Fail at construction (startup), not on the first search.
     void this.apiKey;
     void this.model;
+    void this.routing;
   }
 
   get dim(): number {
@@ -107,6 +109,28 @@ export class ApiEmbeddingProvider implements EmbeddingProvider {
       configString(this.config.get('EMBEDDING_API_URL')) ??
       DEFAULT_EMBEDDING_API_URL
     ).replace(/\/+$/, '');
+  }
+
+  /**
+   * EMBEDDING_API_PROVIDER_ROUTING parsed: sent verbatim as the request's `provider` field.
+   * Undefined when unset. A value that is not a JSON object is a configuration error (startup
+   * validation reports it first; this guards providers built without it).
+   */
+  private get routing(): Record<string, unknown> | undefined {
+    const raw = configString(this.config.get('EMBEDDING_API_PROVIDER_ROUTING'));
+    if (raw === undefined) return undefined;
+    const parsed = parseProviderRouting(raw);
+    if (!parsed.ok) {
+      throw new EmbeddingConfigError(
+        `EMBEDDING_API_PROVIDER_ROUTING ${parsed.error}`,
+      );
+    }
+    return parsed.routing;
+  }
+
+  /** Scheme + host only: safe to log (no path, no credentials). */
+  get endpoint(): string {
+    return this.origin;
   }
 
   /** Scheme + host only: safe to log (no path, no credentials). */
@@ -229,6 +253,8 @@ export class ApiEmbeddingProvider implements EmbeddingProvider {
     };
     const dimensions = this.requestedDimensions;
     if (dimensions !== undefined) body.dimensions = dimensions;
+    const routing = this.routing;
+    if (routing !== undefined) body.provider = routing;
     const payload = JSON.stringify(body);
     const url = `${this.baseUrl}/embeddings`;
     const headers = this.headers;

@@ -764,6 +764,11 @@ export interface components {
         };
         EmbeddingStatusDto: {
             /**
+             * @description Active embedding profile (EMBEDDING_PROFILE), or null when none is selected.
+             * @example api
+             */
+            profile: string | null;
+            /**
              * @description Vector space the active provider produces from now on.
              * @example qwen3-embedding-4b@1024
              */

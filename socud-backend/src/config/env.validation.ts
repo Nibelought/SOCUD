@@ -18,6 +18,8 @@ import {
   DEFAULT_EMBEDDING_API_URL,
   assessEmbeddingApiUrl,
 } from './embedding-api-url';
+import { parseProviderRouting } from './embedding-api-routing';
+import { applyEmbeddingProfile } from './embedding-profile';
 
 export const NODE_ENVIRONMENTS = ['development', 'production', 'test'] as const;
 export const EMBEDDING_PROVIDERS = ['worker', 'api'] as const;
@@ -110,6 +112,15 @@ export class EnvironmentVariables {
   @Max(2048)
   EMBED_BATCH_SIZE?: number;
 
+  /**
+   * Active embedding profile (lower-case, normalised). Variables named `<NAME>__<VAR>` of this
+   * profile override the plain ones; see `applyEmbeddingProfile`. Unset: no profile.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_PROFILE?: string;
+
   /** Where embeddings come from: the SOCUD AI worker (default) or a hosted OpenAI-compatible API. */
   @IsOptional()
   @IsIn(EMBEDDING_PROVIDERS)
@@ -156,6 +167,15 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   EMBEDDING_API_QUERY_INSTRUCTION?: string;
+
+  /**
+   * provider=api: optional JSON object sent verbatim as the request's `provider` field (OpenRouter
+   * provider routing), e.g. {"sort":"latency"} or {"ignore":["DeepInfra"]}. Unset: field omitted.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  EMBEDDING_API_PROVIDER_ROUTING?: string;
 
   /** Declares the vector space for DocumentChunk.embeddingModel; default derived from provider and model. */
   @IsOptional()
@@ -279,6 +299,12 @@ export class EnvironmentVariables {
 /** Rules that involve several variables (EMBEDDING_PROVIDER decides which ones apply). */
 function crossFieldProblems(env: EnvironmentVariables): string[] {
   const problems: string[] = [];
+  if (env.EMBEDDING_API_PROVIDER_ROUTING !== undefined) {
+    const routing = parseProviderRouting(env.EMBEDDING_API_PROVIDER_ROUTING);
+    if (!routing.ok) {
+      problems.push(`  - EMBEDDING_API_PROVIDER_ROUTING: ${routing.error}`);
+    }
+  }
   if (env.EMBEDDING_PROVIDER === 'worker') {
     if (
       env.EMBED_BATCH_SIZE !== undefined &&
@@ -329,9 +355,21 @@ function crossFieldProblems(env: EnvironmentVariables): string[] {
 export function validateEnv(
   config: Record<string, unknown>,
 ): EnvironmentVariables {
+  // The active embedding profile overrides plain variables first (also empty ones, which compose
+  // passes for unset variables); a bad profile is reported on its own, before anything else.
+  let resolved: Record<string, unknown>;
+  try {
+    resolved = applyEmbeddingProfile(config).env;
+  } catch (err) {
+    throw new Error(
+      `Invalid environment configuration:\n  - ${err instanceof Error ? err.message : String(err)}\n` +
+        'See socud-backend/.env.example for the expected variables.',
+    );
+  }
+
   // Treat empty strings (e.g. `PORT=` in .env) as "not set" so defaults apply.
   const cleaned = Object.fromEntries(
-    Object.entries(config).filter(([, value]) => value !== ''),
+    Object.entries(resolved).filter(([, value]) => value !== ''),
   );
 
   const validated = plainToInstance(EnvironmentVariables, cleaned, {

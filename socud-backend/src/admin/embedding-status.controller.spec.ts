@@ -16,6 +16,7 @@ import {
 import { EmbeddingStatusController } from './embedding-status.controller';
 
 const STATUS: EmbeddingStatus = {
+  profile: 'api',
   activeModel: 'openai/text-embedding-3-small@1024',
   provider: 'api',
   dim: 1024,
@@ -76,6 +77,7 @@ describe('GET /admin/embedding-status', () => {
         'activeModel',
         'dim',
         'mismatch',
+        'profile',
         'provider',
         'recommendedActions',
         'stored',

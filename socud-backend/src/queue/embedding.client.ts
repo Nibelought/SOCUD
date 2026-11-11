@@ -1,4 +1,10 @@
-import { Inject, Injectable, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createEmbeddingProvider } from './embedding-provider.factory';
 import {
@@ -21,19 +27,40 @@ export {
  */
 @Injectable()
 export class EmbeddingClient implements OnModuleInit {
+  private readonly logger = new Logger(EmbeddingClient.name);
   private readonly impl: EmbeddingProvider;
+  private readonly activeProfile: string | null;
 
   constructor(
     config: ConfigService,
     @Optional() @Inject(EMBEDDING_PROVIDER) provider?: EmbeddingProvider,
   ) {
     this.impl = provider ?? createEmbeddingProvider(config);
+    const profile = config.get<string>('EMBEDDING_PROFILE');
+    this.activeProfile =
+      typeof profile === 'string' && profile !== '' ? profile : null;
   }
 
-  /** Probes the provider once at startup; an unreachable API only logs a warning. Skipped in tests. */
+  /**
+   * Logs which embedding method is active, then probes the provider once; an unreachable API only
+   * logs a warning. Skipped in tests. Runs in every process that builds this client (API, backfill
+   * and seed scripts), so the active profile is always visible in the log.
+   */
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
+    this.logger.log(this.describe());
     await this.impl.probe?.();
+  }
+
+  /** Name of the active embedding profile (EMBEDDING_PROFILE), or null when none is selected. */
+  get profile(): string | null {
+    return this.activeProfile;
+  }
+
+  /** One log line: profile, provider, model id and the service origin. Never contains a secret. */
+  describe(): string {
+    const endpoint = this.impl.endpoint ? `, ${this.impl.endpoint}` : '';
+    return `Embedding profile: ${this.activeProfile ?? 'none'} (provider ${this.provider}, model id ${this.modelId}${endpoint})`;
   }
 
   get dim(): number {

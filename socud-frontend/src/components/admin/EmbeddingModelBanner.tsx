@@ -54,7 +54,14 @@ export default function EmbeddingModelBanner() {
                 <p className="font-semibold">Embedding model changed: semantic search results may be unreliable</p>
                 <p>
                     The search index was built with <code className="font-mono">{describeStoredModels(status)}</code>, but new
-                    text is now embedded with <code className="font-mono">{status.activeModel}</code>. Vectors from different
+                    text is now embedded with <code className="font-mono">{status.activeModel}</code>
+                    {status.profile ? (
+                        <>
+                            {' '}
+                            (embedding profile <code className="font-mono">{status.profile}</code>)
+                        </>
+                    ) : null}
+                    . Vectors from different
                     models are not comparable, so results mixing them are unreliable. Search keeps working.
                 </p>
                 <p className="font-medium">Recommended actions</p>

@@ -19,6 +19,7 @@ interface Recorded {
     model?: string;
     input?: string[];
     dimensions?: number;
+    provider?: unknown;
     encoding_format?: string;
   };
 }
@@ -216,6 +217,33 @@ describe('ApiEmbeddingProvider (against a local mock server)', () => {
     expect(requests[0].body).not.toHaveProperty('dimensions');
     expect(requests[0].headers['http-referer']).toBeUndefined();
     expect(requests[0].headers['x-title']).toBeUndefined();
+  });
+
+  it('sends EMBEDDING_API_PROVIDER_ROUTING verbatim as the provider field, only when set', async () => {
+    replies.push(
+      { json: embeddings([unit(4)]) },
+      { json: embeddings([unit(4)]) },
+    );
+
+    await build({
+      EMBEDDING_API_PROVIDER_ROUTING:
+        '{"sort":"latency","ignore":["DeepInfra"]}',
+    }).embedBatch(['x'], false);
+    await build().embedBatch(['x'], false);
+
+    expect(requests[0].body.provider).toEqual({
+      sort: 'latency',
+      ignore: ['DeepInfra'],
+    });
+    expect(requests[1].body).not.toHaveProperty('provider');
+  });
+
+  it('fails at construction when the routing is not a JSON object', () => {
+    for (const bad of ['nope', '[1]', 'null']) {
+      expect(() => build({ EMBEDDING_API_PROVIDER_ROUTING: bad })).toThrow(
+        EmbeddingConfigError,
+      );
+    }
   });
 
   it('puts the vectors back in input order using the index field', async () => {

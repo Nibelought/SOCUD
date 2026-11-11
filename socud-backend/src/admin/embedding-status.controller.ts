@@ -25,6 +25,15 @@ export class StoredEmbeddingModelDto {
 
 export class EmbeddingStatusDto {
   @ApiProperty({
+    type: String,
+    nullable: true,
+    example: 'api',
+    description:
+      'Active embedding profile (EMBEDDING_PROFILE), or null when none is selected.',
+  })
+  profile: string | null;
+
+  @ApiProperty({
     example: 'qwen3-embedding-4b@1024',
     description: 'Vector space the active provider produces from now on.',
   })

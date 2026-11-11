@@ -27,6 +27,15 @@ export class WorkerEmbeddingProvider implements EmbeddingProvider {
     );
   }
 
+  /** Scheme + host (+ port) of AI_WORKER_URL: safe to log (no path, no credentials). */
+  get endpoint(): string {
+    try {
+      return new URL(this.config.getOrThrow<string>('AI_WORKER_URL')).origin;
+    } catch {
+      return 'the AI worker';
+    }
+  }
+
   private get url(): string {
     const base = this.config.getOrThrow<string>('AI_WORKER_URL');
     return `${base.replace(/\/+$/, '')}/embed`;

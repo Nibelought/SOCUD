@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { EmbeddingClient, EmbeddingError } from './embedding.client';
+import { Logger } from '@nestjs/common';
 import { createConfigServiceMock } from '../test-utils/mocks';
 
 const vec = (dim: number) => Array.from({ length: dim }, () => 0.5);
@@ -203,5 +204,66 @@ describe('EmbeddingClient', () => {
       new EmbeddingClient(createConfigServiceMock() as unknown as ConfigService)
         .dim,
     ).toBe(1024);
+  });
+});
+
+describe('EmbeddingClient profile', () => {
+  const build = (overrides: Record<string, unknown> = {}) =>
+    new EmbeddingClient(
+      createConfigServiceMock({
+        EMBEDDING_DIM: 4,
+        ...overrides,
+      }) as unknown as ConfigService,
+    );
+  afterEach(() => jest.restoreAllMocks());
+
+  it('exposes the active profile, or null', () => {
+    expect(build().profile).toBeNull();
+    expect(build({ EMBEDDING_PROFILE: '' }).profile).toBeNull();
+    expect(build({ EMBEDDING_PROFILE: 'pc' }).profile).toBe('pc');
+  });
+
+  it('describes profile, provider, model id and origin, never a secret', () => {
+    expect(
+      build({
+        EMBEDDING_PROFILE: 'pc',
+        AI_WORKER_URL: 'http://192.168.1.50:8000/path',
+        AI_WORKER_TOKEN: 'tok-secret',
+      }).describe(),
+    ).toBe(
+      'Embedding profile: pc (provider worker, model id qwen3-embedding-4b@4, http://192.168.1.50:8000)',
+    );
+    const api = build({
+      EMBEDDING_PROFILE: 'api',
+      EMBEDDING_PROVIDER: 'api',
+      EMBEDDING_API_URL: 'https://openrouter.ai/api/v1',
+      EMBEDDING_API_KEY: 'sk-secret',
+      EMBEDDING_API_MODEL: 'qwen/qwen3-embedding-8b',
+    }).describe();
+    expect(api).toBe(
+      'Embedding profile: api (provider api, model id qwen/qwen3-embedding-8b@4, https://openrouter.ai)',
+    );
+    expect(api).not.toContain('sk-secret');
+    expect(build().describe()).toMatch(
+      /^Embedding profile: none \(provider worker/,
+    );
+  });
+
+  it('logs the line at startup, but not under NODE_ENV=test', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const client = build({ EMBEDDING_PROFILE: 'local' });
+    await client.onModuleInit(); // NODE_ENV=test under jest
+    expect(log).not.toHaveBeenCalled();
+
+    const env = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    try {
+      await client.onModuleInit();
+    } finally {
+      process.env.NODE_ENV = env;
+    }
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(/^Embedding profile: local \(provider worker/),
+    );
   });
 });

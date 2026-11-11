@@ -23,6 +23,8 @@ export interface EmbeddingProvider {
   readonly modelId: string;
   /** Vector size the database column expects (EMBEDDING_DIM). */
   readonly dim: number;
+  /** Origin (scheme + host + port) of the service it talks to; safe to log. */
+  readonly endpoint?: string;
   /** Texts per request when embedding documents. */
   readonly batchSize: number;
   /** One request's worth of texts (at most `batchSize` for callers that respect it). */

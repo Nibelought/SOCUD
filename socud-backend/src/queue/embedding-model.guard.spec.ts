@@ -17,7 +17,12 @@ const OPENAI = 'openai/text-embedding-3-small@1024';
 
 describe('EmbeddingModelGuard', () => {
   let prisma: jest.Mocked<PrismaService>;
-  let client: { modelId: string; provider: 'worker' | 'api'; dim: number };
+  let client: {
+    modelId: string;
+    provider: 'worker' | 'api';
+    dim: number;
+    profile: string | null;
+  };
   let guard: EmbeddingModelGuard;
   let warn: jest.SpyInstance;
   let now: number;
@@ -33,7 +38,7 @@ describe('EmbeddingModelGuard', () => {
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     jest.spyOn(Logger.prototype, 'debug').mockImplementation();
     prisma = createPrismaServiceMock();
-    client = { modelId: QWEN, provider: 'worker', dim: 1024 };
+    client = { modelId: QWEN, provider: 'worker', dim: 1024, profile: 'local' };
     guard = new EmbeddingModelGuard(
       prisma,
       client as unknown as EmbeddingClient,
@@ -46,6 +51,7 @@ describe('EmbeddingModelGuard', () => {
     stored([{ model: QWEN, chunks: 120, documents: 14 }]);
     const status = await guard.getStatus();
     expect(status).toEqual({
+      profile: 'local',
       activeModel: QWEN,
       provider: 'worker',
       dim: 1024,
@@ -229,6 +235,7 @@ describe('EmbeddingModelGuard', () => {
 
     it('describeMismatch mentions how many chunks already use the active model', () => {
       const text = describeMismatch({
+        profile: null,
         activeModel: OPENAI,
         provider: 'api',
         dim: 1024,

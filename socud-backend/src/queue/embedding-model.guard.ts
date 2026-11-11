@@ -23,6 +23,8 @@ export interface StoredEmbeddingModel {
 }
 
 export interface EmbeddingStatus {
+  /** Active EMBEDDING_PROFILE, or null when none is selected. */
+  profile: string | null;
   activeModel: string;
   provider: 'worker' | 'api';
   dim: number;
@@ -174,6 +176,7 @@ export class EmbeddingModelGuard implements OnApplicationBootstrap {
     }));
     const mismatch = stored.some((s) => s.model !== activeModel);
     return {
+      profile: this.embeddings.profile ?? null,
       activeModel,
       provider: this.embeddings.provider,
       dim: this.embeddings.dim,

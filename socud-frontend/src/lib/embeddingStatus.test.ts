@@ -13,6 +13,7 @@ const QWEN = 'qwen3-embedding-4b@1024';
 const OPENAI = 'openai/text-embedding-3-small@1024';
 
 const status = (over: Partial<EmbeddingStatus> = {}): EmbeddingStatus => ({
+    profile: 'api',
     activeModel: OPENAI,
     provider: 'api',
     dim: 1024,
