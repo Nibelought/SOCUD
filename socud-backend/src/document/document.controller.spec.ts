@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DocumentController } from './document.controller';
 import { DocumentService } from './document.service';
 import { SearchService } from '../search/search.service';
+import { PermissionService } from '../permission/permission.service';
 
 describe('DocumentController', () => {
   let controller: DocumentController;
@@ -14,6 +15,8 @@ describe('DocumentController', () => {
       providers: [
         { provide: DocumentService, useValue: {} },
         { provide: SearchService, useValue: { search } },
+        // RoleGuard dependency; route authorization is covered by document.guard.matrix.spec.ts
+        { provide: PermissionService, useValue: {} },
       ],
     }).compile();
 
@@ -25,10 +28,8 @@ describe('DocumentController', () => {
   });
 
   describe('search', () => {
-    const req = { user: { id: 'user-1' } };
-
     it('delegates to SearchService with the caller id', async () => {
-      await expect(controller.search(req, 'deploy')).resolves.toEqual([
+      await expect(controller.search('user-1', 'deploy')).resolves.toEqual([
         { id: 'doc' },
       ]);
       expect(search).toHaveBeenCalledWith('user-1', 'deploy');
@@ -37,7 +38,9 @@ describe('DocumentController', () => {
     it.each(['', '   ', undefined])(
       'returns [] for a blank query (%p)',
       async (q) => {
-        await expect(controller.search(req, q as string)).resolves.toEqual([]);
+        await expect(controller.search('user-1', q as string)).resolves.toEqual(
+          [],
+        );
         expect(search).not.toHaveBeenCalled();
       },
     );

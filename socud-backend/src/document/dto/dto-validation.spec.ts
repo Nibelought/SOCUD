@@ -1,6 +1,10 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { Role } from '@prisma/client';
-import { ManageDocumentMemberDto, UpdateDocumentDto } from './document.dto';
+import {
+  GraphQueryDto,
+  ManageDocumentMemberDto,
+  UpdateDocumentDto,
+} from './document.dto';
 import {
   ManageSpaceMemberDto,
   UpdateSpaceDto,
@@ -12,12 +16,46 @@ const pipe = new ValidationPipe({
   forbidNonWhitelisted: true,
   transform: true,
 });
-const run = (type: new () => object, value: unknown) =>
-  pipe.transform(value, { type: 'body', metatype: type });
+const run = (
+  type: new () => object,
+  value: unknown,
+  paramType: 'body' | 'query' = 'body',
+) => pipe.transform(value, { type: paramType, metatype: type });
 
 const UUID = '3f2b8c1e-8a4d-4f5e-9b1a-2c3d4e5f6a7b';
 
 describe('strict request DTOs', () => {
+  describe('GraphQueryDto (GET /document/graph)', () => {
+    it('limit is optional', async () => {
+      await expect(run(GraphQueryDto, {}, 'query')).resolves.toEqual({});
+    });
+
+    it.each([
+      ['1', 1],
+      ['2000', 2000],
+      ['5000', 5000],
+    ])('accepts limit=%s (query strings are converted)', async (raw, limit) => {
+      await expect(
+        run(GraphQueryDto, { limit: raw }, 'query'),
+      ).resolves.toEqual({ limit });
+    });
+
+    it.each(['0', '-1', '5001', '1.5', 'abc', ''])(
+      'rejects limit=%p',
+      async (raw) => {
+        await expect(
+          run(GraphQueryDto, { limit: raw }, 'query'),
+        ).rejects.toThrow(BadRequestException);
+      },
+    );
+
+    it('rejects unknown query parameters', async () => {
+      await expect(run(GraphQueryDto, { limt: '5' }, 'query')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
   describe('UpdateDocumentDto (PATCH /document/:id)', () => {
     it('accepts and trims a title', async () => {
       await expect(

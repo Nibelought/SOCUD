@@ -172,7 +172,15 @@ export class SpaceService {
     });
   }
 
-  async restoreSpace(spaceId: string, userId: string) {
+  /**
+   * Takes a space out of the trash (OWNERs and admins only). Only the documents archived together
+   * with the space (identical `archivedAt`) come back; ones the user archived earlier stay in
+   * the trash. Returns how many documents were restored. 409 if the space is not archived.
+   */
+  async restoreSpace(
+    spaceId: string,
+    userId: string,
+  ): Promise<{ restored: number }> {
     // 1. Проверяем права (Только OWNER или SystemAdmin)
     await this.permissions.assertSpaceRole(
       userId,
@@ -182,37 +190,31 @@ export class SpaceService {
     );
 
     return this.prisma.$transaction(async (tx) => {
-      // Получаем состояние ДО восстановления, чтобы узнать точное время архивации
-      const spaceBeforeRestore = await tx.space.findUnique({
+      // The state BEFORE the restore gives the exact archive timestamp of the cascade.
+      const before = await tx.space.findUnique({
         where: { id: spaceId },
-        select: { archivedAt: true },
+        select: { isArchived: true, archivedAt: true },
       });
-
-      if (!spaceBeforeRestore) {
-        throw new NotFoundException('Space not found');
+      if (!before) throw new NotFoundException('Space not found');
+      if (!before.isArchived) {
+        throw new ConflictException('Space is not archived');
       }
 
-      // 2. Восстанавливаем само пространство
-      const restoredSpace = await tx.space.update({
+      await tx.space.update({
         where: { id: spaceId },
         data: { isArchived: false, archivedAt: null },
       });
 
-      // 3. Каскадное восстановление документов
-      // Восстанавливаем ТОЛЬКО те, что были заархивированы ОДНОВРЕМЕННО с пространством.
-      // Это защищает от случайного восстановления документов, скрытых пользователем вручную ранее.
-      if (spaceBeforeRestore.archivedAt) {
-        await tx.document.updateMany({
-          where: {
-            spaceId: spaceId,
-            isArchived: true,
-            archivedAt: spaceBeforeRestore.archivedAt, // Точное совпадение timestamp
-          },
-          data: { isArchived: false, archivedAt: null },
-        });
-      }
-
-      return restoredSpace;
+      if (!before.archivedAt) return { restored: 0 };
+      const { count } = await tx.document.updateMany({
+        where: {
+          spaceId,
+          isArchived: true,
+          archivedAt: before.archivedAt, // exact timestamp match
+        },
+        data: { isArchived: false, archivedAt: null },
+      });
+      return { restored: count };
     });
   }
 

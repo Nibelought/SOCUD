@@ -35,6 +35,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { SearchUsersDto } from './dto/search-users.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import type { AuthenticatedRequest } from './current-user';
 
 export const REFRESH_COOKIE_NAME = 'socud_refresh';
 export const REFRESH_COOKIE_PATH = '/auth';
@@ -52,8 +53,6 @@ const SET_COOKIE_HEADERS = {
     schema: { type: 'string' },
   },
 };
-
-type AuthenticatedRequest = Request & { user: { id: string; email: string } };
 
 @ApiTags('auth')
 @Controller('auth')

@@ -97,6 +97,14 @@ export class DocumentViewDto {
   @ApiProperty({ type: String, format: 'date-time' })
   updatedAt: Date;
 
+  /**
+   * Whether the document is in the trash. Archived documents are hidden from everyone on this
+   * route (404), so a successful read always reports `false` today; the field lets clients rely on
+   * the flag instead of assuming it.
+   */
+  @ApiProperty()
+  isArchived: boolean;
+
   @ApiProperty({ type: () => DocumentSpaceNameDto })
   space: DocumentSpaceNameDto;
 }
@@ -153,6 +161,10 @@ export class KnowledgeGraphDto {
 
   @ApiProperty({ type: () => [GraphLinkDto] })
   links: GraphLinkDto[];
+
+  /** True when more readable documents existed than `limit`: the graph shows the most recently updated ones. */
+  @ApiProperty()
+  truncated: boolean;
 }
 
 /** GET /document/search item. */

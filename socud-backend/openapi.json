@@ -980,6 +980,93 @@
         ]
       }
     },
+    "/space/{id}/restore": {
+      "post": {
+        "description": "Restores the documents archived together with the space. 409 when the space is not archived.",
+        "operationId": "Space_restoreSpace",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Restore a space from the trash (OWNER)",
+        "tags": [
+          "space"
+        ]
+      }
+    },
     "/document": {
       "post": {
         "operationId": "Document_create",
@@ -1089,9 +1176,21 @@
     },
     "/document/graph": {
       "get": {
-        "description": "Nodes and links shaped for react-force-graph.",
+        "description": "Nodes and links shaped for react-force-graph. At most `limit` nodes (default 2000, max 5000), the most recently updated first; `truncated` is true when more existed.",
         "operationId": "Document_getGraph",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Maximum number of nodes; the most recently updated documents are kept.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 5000,
+              "type": "number"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1099,6 +1198,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/KnowledgeGraphDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
                 }
               }
             }
@@ -1811,6 +1920,93 @@
           }
         ],
         "summary": "Move a document to the trash (OWNER)",
+        "tags": [
+          "document"
+        ]
+      }
+    },
+    "/document/{id}/restore": {
+      "post": {
+        "description": "Also restores descendants archived at the same moment. 409 when the document is not archived or its space is archived (restore the space first).",
+        "operationId": "Document_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Restore a document from the trash (OWNER)",
         "tags": [
           "document"
         ]
@@ -2550,6 +2746,19 @@
           "role"
         ]
       },
+      "RestoreResponseDto": {
+        "type": "object",
+        "properties": {
+          "restored": {
+            "type": "number",
+            "example": 3,
+            "description": "Documents restored: the document plus descendants archived with it, or the documents archived together with the space."
+          }
+        },
+        "required": [
+          "restored"
+        ]
+      },
       "CreateDocumentDto": {
         "type": "object",
         "properties": {
@@ -2767,11 +2976,16 @@
             "items": {
               "$ref": "#/components/schemas/GraphLinkDto"
             }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when more readable documents existed than `limit`: the graph shows the most recently updated ones."
           }
         },
         "required": [
           "nodes",
-          "links"
+          "links",
+          "truncated"
         ]
       },
       "SearchResultDto": {
@@ -2865,6 +3079,10 @@
             "type": "string",
             "format": "date-time"
           },
+          "isArchived": {
+            "type": "boolean",
+            "description": "Whether the document is in the trash. Archived documents are hidden from everyone on this\nroute (404), so a successful read always reports `false` today; the field lets clients rely on\nthe flag instead of assuming it."
+          },
           "space": {
             "$ref": "#/components/schemas/DocumentSpaceNameDto"
           }
@@ -2874,6 +3092,7 @@
           "title",
           "contentHtml",
           "updatedAt",
+          "isArchived",
           "space"
         ]
       },

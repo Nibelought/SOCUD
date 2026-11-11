@@ -4,9 +4,12 @@ import {
   IsUUID,
   IsEnum,
   IsNotEmpty,
+  IsInt,
+  Min,
+  Max,
   MaxLength,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { Role } from '@prisma/client';
 
 export class CreateDocumentDto {
@@ -23,7 +26,9 @@ export class CreateDocumentDto {
 
 /** PATCH /document/:id accepts only the title; content goes through publish/Hocuspocus. */
 export class UpdateDocumentDto {
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
@@ -46,4 +51,18 @@ export class PublishDocumentDto {
   @IsOptional()
   @IsString()
   html?: string;
+}
+
+export const GRAPH_DEFAULT_LIMIT = 2000;
+export const GRAPH_MAX_LIMIT = 5000;
+
+/** GET /document/graph query. */
+export class GraphQueryDto {
+  /** Maximum number of nodes; the most recently updated documents are kept. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(GRAPH_MAX_LIMIT)
+  limit?: number;
 }
