@@ -32,6 +32,22 @@ export class EmbeddingClient {
     return Number(this.config.get<number>('EMBEDDING_DIM') ?? 1024);
   }
 
+  // --- MODEL-GUARD STUB: minimal worker-only version of the Phase-3 contract getters. ---
+  // On merge, resolve this conflict in favour of the p3/provider branch (it owns the real
+  // `modelId`/`provider`); everything else in model-guard only reads `client.modelId`.
+  /** Stable id of the vector space the active provider produces (written to DocumentChunk.embeddingModel). */
+  get modelId(): string {
+    return (
+      this.config.get<string>('EMBEDDING_MODEL_ID') ||
+      `qwen3-embedding-4b@${this.dim}`
+    );
+  }
+
+  get provider(): 'worker' | 'api' {
+    return 'worker';
+  }
+  // --- END MODEL-GUARD STUB ---
+
   private get url(): string {
     const base = this.config.getOrThrow<string>('AI_WORKER_URL');
     return `${base.replace(/\/+$/, '')}/embed`;
