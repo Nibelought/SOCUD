@@ -55,7 +55,7 @@ Then open http://localhost:3001.
 ./dev.sh start               # databases, AI worker, backend, frontend
 ./dev.sh stop                # stop the apps and the databases (data volumes are kept)
 ./dev.sh restart             # restart the apps (the databases stay up); takes the same flags as start
-./dev.sh status              # what is running
+./dev.sh status              # what is running, the embedding profile, a remote worker's /health
 ./dev.sh logs backend        # follow the logs (worker|backend|frontend, default all)
 ```
 
@@ -70,7 +70,7 @@ Data commands (`start` flags, or the commands of the same name):
 | `--admin`, `./dev.sh admin` | Creates or promotes the admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`, read from `socud-backend/.env` or the environment (not the root `.env`). Skipped with a warning when unset. |
 | `--migrate`, `./dev.sh migrate` | Applies the migrations. Seeding and `--admin` apply them automatically. |
 | `--db-only` | Only PostgreSQL and Redis (the data flags above still apply). |
-| `--no-worker`, `--no-frontend` | Do not start the AI worker / the frontend. The worker is also skipped automatically when `AI_WORKER_URL` points to another machine or when `EMBEDDING_PROVIDER=api` (read from the environment, then `socud-backend/.env`). |
+| `--no-worker`, `--no-frontend` | Do not start the AI worker / the frontend. The worker is also skipped automatically unless the effective `EMBEDDING_PROVIDER` is `worker` **and** `AI_WORKER_URL` is a loopback address, so a profile that uses a PC or a hosted API starts no local worker (see "Choosing the embedding method (profiles)"). `EMBEDDING_PROFILE` and every setting are read from the environment first, then `socud-backend/.env`, so `EMBEDDING_PROFILE=api ./dev.sh restart` is a one-off override. |
 | `--install` | Installs what is missing (`npm ci`, `prisma generate`, the worker virtualenv) and copies each `.env.example` to its `.env` only when that file does not exist. |
 
 ```bash
@@ -160,8 +160,9 @@ Each service ships an example file: `.env.example` (root, for Docker Compose), `
 | `POSTGRES_DB` | no | `socud_db` | Database name |
 | `JWT_SECRET` | `--profile app` | none | Backend access token secret (32+ characters) |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | seed only | none | First admin, see "First admin" |
-| `AI_WORKER_URL`, `AI_WORKER_TOKEN`, `LOG_LEVEL`, `SENTRY_DSN`, `CORS_ORIGIN` | no | see `.env.example` | Passed through to the backend container |
-| `EMBEDDING_PROVIDER`, `EMBEDDING_API_*`, `EMBEDDING_MODEL_ID`, `EMBED_BATCH_SIZE`, `EMBED_CONCURRENCY` | no | see `.env.example` | Hosted embedding API instead of the worker; passed through to the backend container (see "Using a hosted embedding API") |
+| `LOG_LEVEL`, `SENTRY_DSN`, `CORS_ORIGIN` | no | see `.env.example` | Passed through to the backend container |
+| `EMBEDDING_PROFILE` and the `<NAME>__<VAR>` blocks (`LOCAL__*`, `PC__*`, `API__*`) | no | `local` in `.env.example` | The embedding method of the container: one switch plus one block per method (see "Choosing the embedding method (profiles)"). The backend service reads the whole root `.env` (`env_file`), so any profile reaches it. |
+| `AI_WORKER_URL`, `AI_WORKER_TOKEN`, `EMBEDDING_PROVIDER`, `EMBEDDING_API_*`, `EMBEDDING_MODEL_ID`, `EMBED_*` | no | see `.env.example` | The same settings without a profile (the older way); a profile, when chosen, wins over them |
 | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` | no | `http://localhost:3000`, `ws://127.0.0.1:3002` | Frontend build args (browser-facing URLs) |
 | `*_HOST_PORT`, `POSTGRES_CONTAINER_NAME`, `NODE_VERSION` | no | see `.env.example` | Port / name / Node overrides |
 
@@ -173,6 +174,8 @@ Each service ships an example file: `.env.example` (root, for Docker Compose), `
 | `JWT_SECRET` | yes | none | Access token secret, at least 32 characters |
 | `PORT` | no | `3000` | REST API port |
 | `WS_PORT` | no | `3002` | Hocuspocus WebSocket port |
+| `EMBEDDING_PROFILE` | no | none | Name of the active embedding profile (`local`, `pc`, `api`, or your own): the settings named `<NAME>__<VAR>` replace the plain `<VAR>` (see "Choosing the embedding method (profiles)"). Unset: plain variables only, as before |
+| `EMBEDDING_API_PROVIDER_ROUTING` | no | none | `api` only. A JSON object sent as the request's `provider` field (OpenRouter provider routing), e.g. `{"sort":"latency"}` or `{"ignore":["DeepInfra"]}`; must be a JSON object, checked at startup. Unset: field omitted |
 | `AI_WORKER_URL` | no | `http://127.0.0.1:8000` | Base URL of the AI worker; may point to another machine (see "Running the worker on another machine") |
 | `AI_WORKER_TOKEN` | no | none | Sent to the worker as `X-Worker-Token`; must equal the worker's `WORKER_TOKEN` |
 | `EMBEDDING_PROVIDER` | no | `worker` | `worker` (the AI worker) or `api` (a hosted OpenAI-compatible embeddings API; no worker needed). See "Using a hosted embedding API (OpenRouter)" |
@@ -269,6 +272,31 @@ Then `pip install -r requirements.txt` (no model dependencies are used) and `pyt
 Reproduce or re-tune (it loads the GPU, so run it when the PC is idle): `python scripts/stress_test.py --url http://127.0.0.1:8000` tests the worker, `--url http://<pc-ip>:1234/v1 --openai` tests the server directly. It sweeps batch size x parallel requests, recommends the lowest-latency cell within 3% of peak throughput, then measures query latency under that indexing load. Exit code 1 if any request failed.
 
 Verified (2026-11-10) with LM Studio on a Windows/NVIDIA PC over the LAN, model `text-embedding-qwen3-embedding-4b`: `smoke_test.py` passes (1024 dimensions, unit norm, correct Russian/English and cross-language ranking; the Qwen3 README example scores 0.747/0.146/0.048/0.644 against the reference 0.753/0.115/0.032/0.626), at about 7.5 texts/s for single chunks and about 10 texts/s with batches of 8 or more. The M1 MLX worker manages roughly 0.4 texts/s, so the default `EMBED_BATCH_SIZE=1` is already fine here (one chunk takes ~0.13 s) and larger batches add little.
+
+### Choosing the embedding method (profiles)
+
+How text is vectorized is one choice with several settings: a worker on this machine, a worker on a PC in the LAN, or a hosted API. Instead of editing a handful of variables, keep one block per method in the `.env` and switch with a single variable:
+
+```ini
+EMBEDDING_PROFILE=local       # local | pc | api  (or a name of your own)
+```
+
+`socud-backend/.env.example` ships three complete blocks (`LOCAL__*`, `PC__*`, `API__*`; the root `.env.example` the same for Docker) with good defaults: `local` = worker on `127.0.0.1:8000`, batch 1; `pc` = worker at a LAN address with a token, batch 1, 2 jobs at once; `api` = OpenRouter `qwen/qwen3-embedding-8b`, 1024 dimensions, 30 s timeout, 4 jobs at once, `{"sort":"latency"}` routing. Copy it, fill in the API key / PC address / token, choose the profile.
+
+Rules:
+
+- `<NAME>__<VAR>` (profile name upper-cased, `-` becomes `_`, two underscores: `API__EMBEDDING_API_KEY`, `PC__AI_WORKER_URL`, `MY_PC__EMBED_CONCURRENCY` for `my-pc`) sets `<VAR>` while that profile is active. It replaces a plain `<VAR>` in the same file, in the environment, or an empty one that Docker Compose passes. The variables of the other profiles are ignored entirely, so an unselected `api` block may have an empty key.
+- A profile may set only `EMBEDDING_*` (not `EMBEDDING_PROFILE`), `EMBED_*`, `AI_WORKER_URL`, `AI_WORKER_TOKEN` and `SEARCH_MIN_SIMILARITY`. Anything else, or a `EMBEDDING_PROFILE` that has no `<NAME>__` variables, stops the start with a message listing the profiles found. Secrets are never logged.
+- Without `EMBEDDING_PROFILE` nothing changes: the plain `EMBEDDING_PROVIDER`, `AI_WORKER_URL`, ... apply as before.
+- The backend, `npm run backfill:embeddings` and `npm run seed:demo` resolve it the same way (one function, `applyEmbeddingProfile`, called by the environment validation) and the backend logs `Embedding profile: api (provider api, model id qwen/qwen3-embedding-8b@1024, https://openrouter.ai)` at startup. `GET /admin/embedding-status` returns the `profile`, and the mismatch banner names it.
+- `dev.sh` applies the same rules to decide about the worker: provider `worker` with a loopback `AI_WORKER_URL` starts the local MLX worker; a worker on another machine starts none and `./dev.sh status` shows `remote worker at http://192.168.1.50:8000 (profile pc), /health reachable` (or `NOT reachable`, never fatal); provider `api` shows `not needed`. The environment wins over the file, so `EMBEDDING_PROFILE=api ./dev.sh restart` tries a profile once. After editing `EMBEDDING_PROFILE` in the file run `./dev.sh restart` (a running worker is stopped, the new choice started).
+- Docker Compose: the `backend` service reads the whole root `.env` through `env_file` (profile names are arbitrary, so their variables cannot be listed in `environment:`), plus an explicit `EMBEDDING_PROFILE` so a shell override works. The profile wins over the `${VAR:-default}` entries in `docker-compose.yml`. A worker on the host is `http://host.docker.internal:8000` for a container (the root `.env.example` already uses it in its `local` block); the native backend uses `127.0.0.1`. `env_file` also passes the other root variables (`POSTGRES_PASSWORD`, `SEED_ADMIN_*`, ...) into the container.
+
+**Changing profiles and models.** `local` and `pc` run the same model (Qwen3-Embedding-4B) and switch freely. `api` uses the 8B model, a different vector space: after switching to it (or back) the mismatch warning appears and `npm run backfill:embeddings -- --reembed-mismatched` is needed (see "Switching embedding models"). `SEARCH_MIN_SIMILARITY=0.35` was calibrated on the 4B model; tune it in the `api` block (`API__SEARCH_MIN_SIMILARITY`) after trying a few searches.
+
+**An OpenAI-compatible server on the PC instead of the worker** (LM Studio): no worker runs anywhere; make a profile with `EMBEDDING_PROVIDER=api`, `EMBEDDING_API_URL=http://<PC>:1234/v1` (plain `http://` is accepted for private addresses), any non-empty `EMBEDDING_API_KEY` and the model id LM Studio lists (example in `socud-backend/.env.example`). Leave out `EMBEDDING_API_PROVIDER_ROUTING`, which only OpenRouter understands.
+
+**Why `EMBEDDING_API_PROVIDER_ROUTING`.** OpenRouter spreads a model over several upstream hosts. In a measurement the default pick of `qwen/qwen3-embedding-8b` answered in about 7 s (median; DeepInfra) against 1.3 s via Nebius; `{"sort":"latency"}` gave a median of 0.64 s (maximum 4.9 s). The JSON object is sent verbatim as the `provider` field of each request.
 
 ### Using a hosted embedding API (OpenRouter)
 
@@ -401,8 +429,8 @@ Every stored vector records the model that produced it (`DocumentChunk.embedding
 
 - **Startup log.** If the index holds vectors of a model other than the active one, the API logs a `WARN` naming the stored model(s) with chunk and document counts, the active model and the recommended actions.
 - **While embedding.** The first document embedded while other models are present logs the same `WARN`, then at most one more every 10 minutes (never one per chunk).
-- **Admin endpoint.** `GET /admin/embedding-status` (system administrators only, 403 for everyone else, cached for 30 s) returns `{ activeModel, provider, dim, stored: [{ model, chunks, documents }], mismatch, recommendedActions }`. Chunks without a vector are not counted.
-- **Dashboard banner.** Admins see a dismissible warning on the dashboard with the stored and the active model and the recommended actions while `mismatch` is true. Non-admins, and a failed request, show nothing. A dismissal is remembered per browser for that exact combination of models, so a further change brings the banner back.
+- **Admin endpoint.** `GET /admin/embedding-status` (system administrators only, 403 for everyone else, cached for 30 s) returns `{ profile, activeModel, provider, dim, stored: [{ model, chunks, documents }], mismatch, recommendedActions }` (`profile` is the active `EMBEDDING_PROFILE` or `null`). Chunks without a vector are not counted.
+- **Dashboard banner.** Admins see a dismissible warning on the dashboard with the stored and the active model (and profile) and the recommended actions while `mismatch` is true. Non-admins, and a failed request, show nothing. A dismissal is remembered per browser for that exact combination of models, so a further change brings the banner back.
 
 Rows that have a vector but no recorded model (written before this feature, or by an older build during a rolling deploy) are counted as `qwen3-embedding-4b@1024`, which is what the migration assigns to all existing vectors.
 
