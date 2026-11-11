@@ -1,49 +1,119 @@
 "use client";
 "use no memo"; // useEditor returns one mutable Editor instance that is read during render; compiler memoization would go stale
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
-import { useRouter } from 'next/navigation';
-import { Globe, Users, Eye, Edit2, Settings } from 'lucide-react';
-import AccessManagerModal from '@/components/modals/AccessManagerModal';
-import LatexEditorModal from "@/components/editor/LatexEditorModal";
+import { Eye, History, MoreHorizontal, Send, Settings, Users, WifiOff } from 'lucide-react';
+import { api } from '@/lib/api/client';
+import { ensureOk, unwrap } from '@/lib/api/result';
+import { caughtMessage } from '@/lib/api/errors';
+import { plural } from '@/lib/format';
+import { keys } from '@/lib/queries';
+import { invalidate } from '@/hooks/useResource';
+import { Button, ButtonLink, IconButton } from '@/components/ui/Button';
+import { Avatar } from '@/components/ui/Bits';
+import { useFeedback } from '@/components/ui/Feedback';
+import { Menu } from '@/components/ui/Menu';
+import { Page, Toolbar } from '@/components/shell/Page';
+import { Breadcrumb } from '@/components/documents/DocumentParts';
+import { VersionHistorySheet } from '@/components/documents/VersionHistorySheet';
+import { SettingsSheet, type SettingsTab } from '@/components/sharing/SettingsSheet';
+import LatexEditorModal from './LatexEditorModal';
 import EditorToolbar from './EditorToolbar';
 import { createEditorExtensions } from './createExtensions';
 import { createMathDoubleClickExtension } from './extensions/mathDoubleClick';
 import type { ActiveUser } from './useCollaboration';
-import { api } from "@/lib/api/client";
 
-// --- Inner editor ---
-export default function EditorInner({ provider, ydoc, userName, userColor, activeUsers, currentUserId }: {
+export interface DocumentMeta {
+    title: string;
+    spaceId?: string;
+    spaceName?: string;
+}
+
+/**
+ * The editor screen's frame: toolbar with the document's path and actions, then the writing column.
+ * Shared by the connecting state and the live editor so the screen doesn't jump when it connects.
+ */
+export function EditorFrame({
+    documentId,
+    meta,
+    actions,
+    formatBar,
+    title,
+    children,
+}: {
+    documentId: string;
+    meta: DocumentMeta | undefined;
+    actions?: ReactNode;
+    formatBar?: ReactNode;
+    title?: ReactNode;
+    children: ReactNode;
+}) {
+    return (
+        <Page
+            toolbar={
+                <Toolbar
+                    leading={<Breadcrumb spaceId={meta?.spaceId} spaceName={meta?.spaceName} title={meta?.title || 'Untitled'} />}
+                    actions={
+                        actions ?? (
+                            <ButtonLink href={`/document/${documentId}/view`} variant="secondary">
+                                Done
+                            </ButtonLink>
+                        )
+                    }
+                />
+            }
+        >
+            {formatBar && <div className="sticky top-[56px] z-20 flex justify-center px-3 pt-1">{formatBar}</div>}
+            <div className="mx-auto w-full max-w-[740px] px-5 pt-8 pb-[40vh] sm:px-10">
+                {title ?? <h1 className="mb-6 text-display font-bold tracking-[-0.02em] text-label">{meta?.title || ' '}</h1>}
+                {children}
+            </div>
+        </Page>
+    );
+}
+
+export default function EditorInner({
+    provider,
+    ydoc,
+    userName,
+    userColor,
+    activeUsers,
+    online,
+    documentId,
+    meta,
+}: {
     provider: HocuspocusProvider;
     ydoc: Y.Doc;
     userName: string;
     userColor: string;
     activeUsers: ActiveUser[];
-    currentUserId: string;
+    online: boolean;
+    documentId: string;
+    meta: DocumentMeta | undefined;
 }) {
     const router = useRouter();
-    const [isEditing, setIsEditing] = useState(true);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false); // modal state
-
+    const { toast } = useFeedback();
+    const [previewing, setPreviewing] = useState(false);
+    const [publishing, setPublishing] = useState(false);
+    const [settings, setSettings] = useState<SettingsTab | null>(null);
+    const [historyOpen, setHistoryOpen] = useState(false);
     const [latexModal, setLatexModal] = useState({
         isOpen: false,
         initialLatex: '',
         isDisplay: false,
         isEditing: false,
-        nodePos: undefined as number | undefined
+        nodePos: undefined as number | undefined,
     });
 
-    // Stable callback for the extension (prevents recreating the editor)
+    // Stable callback so the extension (and with it the editor) is not recreated.
     const handleMathDoubleClick = useCallback((latex: string, isDisplay: boolean, pos: number) => {
         setLatexModal({ isOpen: true, initialLatex: latex, isDisplay, isEditing: true, nodePos: pos });
     }, []);
-
-    // Memoize the extension
     const MathDoubleClickEdit = useMemo(() => createMathDoubleClickExtension(handleMathDoubleClick), [handleMathDoubleClick]);
-
 
     const openLatexEditor = (initialLatex = '', isDisplay = false) => {
         setLatexModal({ isOpen: true, initialLatex, isDisplay, isEditing: false, nodePos: undefined });
@@ -56,106 +126,199 @@ export default function EditorInner({ provider, ydoc, userName, userColor, activ
 
     const editor = useEditor({
         immediatelyRender: false,
-        editable: isEditing,
+        editable: !previewing,
         extensions,
+        editorProps: { attributes: { class: 'doc-content', 'aria-label': 'Document text' } },
     });
 
     useEffect(() => {
-        if (editor) editor.setEditable(isEditing);
-    }, [isEditing, editor]);
+        editor?.setEditable(!previewing);
+    }, [previewing, editor]);
 
-    const handlePublish = async () => {
-        if (!editor) return;
-        const html = editor.getHTML();
+    const publish = useCallback(async () => {
+        if (!editor || publishing) return;
+        setPublishing(true);
         try {
-            const docId = provider.configuration.name;
-            const { data, response } = await api.POST("/document/{id}/publish", {
-                params: { path: { id: docId } },
-                body: { html },
+            const data = unwrap(
+                await api.POST('/document/{id}/publish', { params: { path: { id: documentId } }, body: { html: editor.getHTML() } }),
+                'Couldn’t publish. Editors and owners can publish.',
+            );
+            invalidate(keys.document(documentId));
+            invalidate(keys.versions(documentId));
+            invalidate(keys.recent);
+            invalidate(keys.graph);
+            const links = data.extractedLinksCount;
+            toast({
+                title: data.version ? `Published version ${data.version}` : 'Published',
+                description: [
+                    links > 0 ? `${plural(links, 'link')} to other documents found.` : null,
+                    data.embeddingQueued === false ? 'Search will include it a little later.' : 'Search will include it shortly.',
+                ]
+                    .filter(Boolean)
+                    .join(' '),
             });
-            if (!response.ok || !data) throw new Error("Failed to publish");
-            alert(`Published! Extracted links: ${data.extractedLinksCount}`);
-        } catch (error) {
-            console.error(error);
-            alert("Error publishing.");
+        } catch (err) {
+            toast({ tone: 'error', title: caughtMessage(err, 'Couldn’t publish') });
+        } finally {
+            setPublishing(false);
         }
-    };
+    }, [editor, publishing, documentId, toast]);
 
-    if (!editor) return <div className="p-8 text-slate-500 animate-pulse">Initializing editor...</div>;
+    // ⌘S: changes save automatically; say so instead of opening the browser's Save dialog.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                toast({ tone: 'info', title: 'Changes save automatically', description: 'Publish to update what readers see.' });
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [toast]);
+
+    const others = activeUsers.filter((u, i, all) => all.findIndex((x) => x.name === u.name) === i && u.name !== userName);
+
+    const actions = (
+        <>
+            {!online && (
+                <span role="status" className="mr-1 flex items-center gap-1.5 rounded-full bg-warning-fill px-2.5 py-1 text-footnote font-medium text-warning">
+                    <WifiOff className="size-3.5" aria-hidden /> Offline
+                </span>
+            )}
+            {others.length > 0 && (
+                <div className="mr-1 flex -space-x-1.5" aria-label={`Also editing: ${others.map((u) => u.name).join(', ')}`} role="group">
+                    {others.slice(0, 4).map((u) => (
+                        <Avatar key={u.clientId} name={u.name} colorKey={u.name} size={24} label={`${u.name} is editing`} ring />
+                    ))}
+                    {others.length > 4 && (
+                        <span className="inline-flex size-6 items-center justify-center rounded-full bg-fill-strong text-caption font-semibold text-label ring-2 ring-window">
+                            +{others.length - 4}
+                        </span>
+                    )}
+                </div>
+            )}
+            <IconButton icon={Eye} label={previewing ? 'Stop Previewing' : 'Preview'} active={previewing} aria-pressed={previewing} onClick={() => setPreviewing((p) => !p)} />
+            <Menu
+                label="Document actions"
+                align="end"
+                items={[
+                    { label: 'Version History…', icon: History, onSelect: () => setHistoryOpen(true) },
+                    { label: 'Share…', icon: Users, onSelect: () => setSettings('people') },
+                    { label: 'Document Settings…', icon: Settings, onSelect: () => setSettings('general') },
+                ]}
+                trigger={(props) => <IconButton {...props} icon={MoreHorizontal} label="More" />}
+            />
+            <span className="hidden sm:contents">
+                <ButtonLink href={`/document/${documentId}/view`}>Done</ButtonLink>
+            </span>
+            <Button variant="primary" icon={Send} loading={publishing} onClick={publish} disabled={!editor}>
+                Publish
+            </Button>
+        </>
+    );
 
     return (
-        <div className="flex flex-col h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            {/* Top bar */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                        <Users className="w-4 h-4" />
-                        <span className="font-medium">{activeUsers.length} active</span>
-                    </div>
-                    <div className="flex -space-x-2">
-                        {activeUsers.map((u) => (
-                            <div key={u.clientId} title={u.name} className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white shadow-sm" style={{ backgroundColor: u.color }}>
-                                {u.name.charAt(0).toUpperCase()}
-                            </div>
-                        ))}
-                    </div>
-                </div>
+        <EditorFrame
+            documentId={documentId}
+            meta={meta}
+            actions={actions}
+            formatBar={!previewing && editor ? <EditorToolbar editor={editor} openLatexEditor={openLatexEditor} /> : undefined}
+            title={<TitleField documentId={documentId} meta={meta} readOnly={previewing} onEnter={() => editor?.commands.focus('start')} />}
+        >
+            <EditorContent editor={editor} />
 
-                <div className="flex items-center gap-2">
-                    {/* Settings button */}
-                    <button
-                        onClick={() => setIsSettingsOpen(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                    >
-                        <Settings className="w-4 h-4" /> Settings
-                    </button>
-
-                    <button onClick={() => setIsEditing(!isEditing)} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border ${isEditing ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-                        {isEditing ? <><Eye className="w-4 h-4" /> Preview</> : <><Edit2 className="w-4 h-4" /> Edit</>}
-                    </button>
-
-                    <button
-                        onClick={() => router.push(`/document/${provider.configuration.name}/view`)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                    >
-                        <Eye className="w-4 h-4" /> View
-                    </button>
-
-                    <button onClick={handlePublish} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-1.5 rounded-md text-sm font-medium transition-colors">
-                        <Globe className="w-4 h-4" /> Publish
-                    </button>
-                </div>
-            </div>
-
-            {isEditing && <EditorToolbar editor={editor} openLatexEditor={openLatexEditor} />}
-
-            {/* Editor canvas: full height with correct scrolling */}
-            <div className={`flex-1 overflow-y-auto p-8 ${!isEditing ? 'bg-slate-50/50' : ''}`}>
-                <EditorContent
-                    editor={editor}
-                    className="prose prose-slate max-w-none focus:outline-none h-full [&_.ProseMirror]:min-h-full [&_.ProseMirror]:h-full"
-                />
-            </div>
-
-            {/* Access modal */}
-            <AccessManagerModal
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-                entityId={provider.configuration.name}
+            <SettingsSheet
+                open={settings !== null}
+                initialTab={settings ?? 'general'}
+                onClose={() => setSettings(null)}
                 entityType="document"
-                currentUserId={currentUserId}
-                onDeleteSuccess={() => router.push('/dashboard')}
+                entityId={documentId}
+                spaceId={meta?.spaceId}
+                onRemoved={() => router.push(meta?.spaceId ? `/space/${meta.spaceId}` : '/dashboard')}
             />
-
+            <VersionHistorySheet open={historyOpen} onClose={() => setHistoryOpen(false)} documentId={documentId} />
             <LatexEditorModal
                 isOpen={latexModal.isOpen}
-                onClose={() => setLatexModal(prev => ({ ...prev, isOpen: false }))}
+                onClose={() => setLatexModal((prev) => ({ ...prev, isOpen: false }))}
                 editor={editor}
                 initialLatex={latexModal.initialLatex}
                 isDisplay={latexModal.isDisplay}
                 isEditing={latexModal.isEditing}
                 nodePos={latexModal.nodePos}
             />
-        </div>
+        </EditorFrame>
+    );
+}
+
+/**
+ * The document's title, edited in place like the first line of a note. Saved when it loses focus
+ * or on Return (which then moves into the text).
+ */
+function TitleField({ documentId, meta, readOnly, onEnter }: { documentId: string; meta: DocumentMeta | undefined; readOnly: boolean; onEnter: () => void }) {
+    const { toast } = useFeedback();
+    const saved = meta?.title ?? '';
+    const [value, setValue] = useState(saved);
+    const [lastSaved, setLastSaved] = useState(saved);
+    const ref = useRef<HTMLTextAreaElement>(null);
+
+    // Adopt the server title when it arrives or changes elsewhere (not while typing).
+    useEffect(() => {
+        if (document.activeElement !== ref.current) {
+            setValue(saved);
+            setLastSaved(saved);
+        }
+    }, [saved]);
+
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${el.scrollHeight}px`;
+    }, [value]);
+
+    const save = async () => {
+        const next = value.trim();
+        if (!next || next === lastSaved) {
+            setValue(lastSaved);
+            return;
+        }
+        try {
+            ensureOk(
+                await api.PATCH('/document/{id}', { params: { path: { id: documentId } }, body: { title: next } }),
+                'Couldn’t rename. Editors and owners can rename.',
+            );
+            setLastSaved(next);
+            setValue(next);
+            invalidate(keys.document(documentId));
+            if (meta?.spaceId) invalidate(keys.space(meta.spaceId));
+            invalidate(keys.recent);
+        } catch (err) {
+            setValue(lastSaved);
+            toast({ tone: 'error', title: caughtMessage(err, 'Couldn’t rename the document') });
+        }
+    };
+
+    return (
+        <textarea
+            ref={ref}
+            value={value}
+            readOnly={readOnly}
+            rows={1}
+            aria-label="Title"
+            placeholder="Untitled"
+            maxLength={255}
+            onChange={(e) => setValue(e.target.value.replace(/\n/g, ''))}
+            onBlur={save}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onEnter();
+                } else if (e.key === 'Escape') {
+                    setValue(lastSaved);
+                    e.currentTarget.blur();
+                }
+            }}
+            className="mb-6 block w-full resize-none overflow-hidden bg-transparent text-display font-bold tracking-[-0.02em] text-label outline-none placeholder:text-label-3"
+        />
     );
 }

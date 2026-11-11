@@ -111,6 +111,7 @@ describe('DocumentService', () => {
         contentHtml: '<p>x</p>',
         updatedAt,
         isArchived: false,
+        spaceId: 'space',
         members: [],
         space: { name: 'Space', members: [{ role: 'VIEWER' }] },
       });
@@ -121,6 +122,7 @@ describe('DocumentService', () => {
         contentHtml: '<p>x</p>',
         updatedAt,
         isArchived: false,
+        spaceId: 'space',
         space: { name: 'Space' },
       });
     });
