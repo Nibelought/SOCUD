@@ -7,11 +7,25 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmbedDocumentHandler } from './embed-document.handler';
+import { EmbeddingClient } from './embedding.client';
+import {
+  EmbeddingModelGuard,
+  LEGACY_EMBEDDING_MODEL,
+} from './embedding-model.guard';
 import { QueueService } from './queue.service';
 
 const PAGE_SIZE = 200;
 const STARTUP_DELAY_MS = 10_000;
 const DEFAULT_RECONCILE_INTERVAL_MS = 10 * 60_000;
+
+export interface BackfillOptions {
+  /**
+   * Besides documents with missing/outdated embeddings, also pick documents that have chunks
+   * embedded by another model than the active one (or an unknown/legacy one, which counts as
+   * `LEGACY_EMBEDDING_MODEL`) and re-embed those chunks.
+   */
+  reembedMismatched?: boolean;
+}
 
 export interface BackfillResult {
   /** Published documents whose embeddings are missing or outdated. */
@@ -39,6 +53,8 @@ export class EmbeddingBackfillService implements OnModuleInit, OnModuleDestroy {
     private readonly queue: QueueService,
     private readonly handler: EmbedDocumentHandler,
     private readonly config: ConfigService,
+    private readonly embeddings: EmbeddingClient,
+    private readonly modelGuard: EmbeddingModelGuard,
   ) {}
 
   onModuleInit(): void {
@@ -70,50 +86,78 @@ export class EmbeddingBackfillService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Enqueues an `embed-document` job (with chunk rebuild) for every document that needs one. */
-  async enqueueMissing(): Promise<BackfillResult> {
-    return this.forEachPending(async (documentId, version) =>
+  async enqueueMissing(options: BackfillOptions = {}): Promise<BackfillResult> {
+    const reembedMismatched = options.reembedMismatched === true;
+    return this.forEachPending(reembedMismatched, async (documentId, version) =>
       this.queue.enqueueEmbedDocument({
         documentId,
         version,
         rebuildChunks: true,
+        ...(reembedMismatched ? { reembedMismatched } : {}),
       }),
     );
   }
 
   /** Same, but embeds in this process without Redis (needs only the AI worker). */
-  async embedMissingInline(): Promise<BackfillResult> {
-    return this.forEachPending(async (documentId, version) => {
-      try {
-        await this.handler.handle({ documentId, version, rebuildChunks: true });
-        return true;
-      } catch (err) {
-        this.logger.error(
-          `Inline embedding of ${documentId} failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return false;
-      }
-    });
+  async embedMissingInline(
+    options: BackfillOptions = {},
+  ): Promise<BackfillResult> {
+    const reembedMismatched = options.reembedMismatched === true;
+    return this.forEachPending(
+      reembedMismatched,
+      async (documentId, version) => {
+        try {
+          await this.handler.handle({
+            documentId,
+            version,
+            rebuildChunks: true,
+            ...(reembedMismatched ? { reembedMismatched } : {}),
+          });
+          return true;
+        } catch (err) {
+          this.logger.error(
+            `Inline embedding of ${documentId} failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return false;
+        }
+      },
+    );
   }
 
   private async forEachPending(
+    reembedMismatched: boolean,
     action: (documentId: string, version: number) => Promise<boolean>,
   ): Promise<BackfillResult> {
     if (this.running) return { found: 0, scheduled: 0 };
     this.running = true;
     try {
       const result: BackfillResult = { found: 0, scheduled: 0 };
+      // Only read when needed: an unused id would just be a dead bind parameter.
+      const activeModel = reembedMismatched ? this.embeddings.modelId : '';
       let cursor = '';
       for (;;) {
-        const rows = await this.prisma.$queryRaw<
-          { id: string; version: number }[]
-        >`
-          SELECT "id", "publishedVersion" AS "version" FROM "Document"
-          WHERE "contentHtml" IS NOT NULL
-            AND ("embeddedVersion" IS NULL OR "embeddedVersion" < "publishedVersion")
-            AND "id" > ${cursor}
-          ORDER BY "id"
-          LIMIT ${PAGE_SIZE}
-        `;
+        const rows = reembedMismatched
+          ? await this.prisma.$queryRaw<{ id: string; version: number }[]>`
+              SELECT d."id", d."publishedVersion" AS "version" FROM "Document" d
+              WHERE d."contentHtml" IS NOT NULL
+                AND (d."embeddedVersion" IS NULL OR d."embeddedVersion" < d."publishedVersion"
+                     OR EXISTS (
+                       SELECT 1 FROM "DocumentChunk" c
+                       WHERE c."documentId" = d."id" AND c."embedding" IS NOT NULL
+                         AND COALESCE(c."embeddingModel", ${LEGACY_EMBEDDING_MODEL}) <> ${activeModel}
+                     ))
+                AND d."id" > ${cursor}
+              ORDER BY d."id"
+              LIMIT ${PAGE_SIZE}
+            `
+          : await this.prisma.$queryRaw<{ id: string; version: number }[]>`
+              SELECT "id", "publishedVersion" AS "version" FROM "Document"
+              WHERE "contentHtml" IS NOT NULL
+                AND ("embeddedVersion" IS NULL OR "embeddedVersion" < "publishedVersion")
+                AND "id" > ${cursor}
+              ORDER BY "id"
+              LIMIT ${PAGE_SIZE}
+            `;
         if (rows.length === 0) break;
         for (const row of rows) {
           result.found++;
@@ -125,6 +169,8 @@ export class EmbeddingBackfillService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(
           `Embedding backfill: ${result.found} document(s) pending, ${result.scheduled} scheduled`,
         );
+        // The stored-model counts changed (or will, once the jobs ran): do not serve a stale status.
+        this.modelGuard.invalidate();
       }
       return result;
     } finally {
