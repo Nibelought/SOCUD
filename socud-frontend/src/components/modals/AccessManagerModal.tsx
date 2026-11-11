@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, Search, ShieldAlert, Trash2, Archive, Loader2, RefreshCw, Save } from "lucide-react";
-import { API_URL } from "@/lib/config";
-import { fetchWithAuth } from "@/lib/auth";
+import { restoreErrorMessage } from "@/lib/restore";
 import { api, apiErrorMessage, type components } from "@/lib/api/client";
 
 type RoleName = components["schemas"]["Role"];
@@ -54,8 +53,7 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
                 return data && { title: data.name, description: data.description ?? "", isArchived: data.isArchived };
             }
             const { data } = await api.GET('/document/{id}', { params: { path: { id: entityId } } });
-            // The document view endpoint does not report archive state
-            return data && { title: data.title, description: "", isArchived: false };
+            return data && { title: data.title, description: "", isArchived: data.isArchived };
         };
         const loadMembers = async (): Promise<Member[]> => {
             const { data } = isSpace
@@ -148,15 +146,18 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
 
     const handleRestoreEntity = async () => {
         setActionLoading('restore');
-        // NOTE: the backend has no POST /space|document/:id/restore route yet (the services have
-        // restoreSpace/restoreDocument), so it is absent from the OpenAPI document and this call stays
-        // untyped. It still gets the bearer token and refresh-on-401 through fetchWithAuth.
-        const res = await fetchWithAuth(`${API_URL}/${entityType}/${entityId}/restore`, { method: 'POST' });
+        const { response, error } = isSpace
+            ? await api.POST('/space/{id}/restore', pathParams)
+            : await api.POST('/document/{id}/restore', pathParams);
         setActionLoading(null);
-        if (res.ok) {
+        if (response.ok) {
             setIsArchived(false);
             onDeleteSuccess(); // Редирект или обновление UI
-        } else alert("Failed to restore. Requires OWNER permissions.");
+            return;
+        }
+        // 409: nothing to restore, so the "archived" state shown here was stale
+        if (response.status === 409) setIsArchived(false);
+        alert(restoreErrorMessage(response.status, error, entityType));
     };
 
     const handleDeleteEntity = async () => {

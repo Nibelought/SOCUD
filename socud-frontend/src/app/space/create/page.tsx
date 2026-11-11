@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Shield, ArrowLeft } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api/client";
+import { caughtMessage } from "@/lib/api/errors";
 import { sessionLostLoginUrl } from "@/lib/auth";
 
 export default function CreateSpacePage() {
@@ -34,8 +35,8 @@ export default function CreateSpacePage() {
             }
 
             router.push("/dashboard");
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(caughtMessage(err));
         } finally {
             setLoading(false);
         }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, type components } from "@/lib/api/client";
+import { caughtMessage } from "@/lib/api/errors";
 import { ArrowLeft, Edit3, Loader2 } from "lucide-react";
 import Link from "next/link";
 import katex from 'katex';
@@ -36,8 +37,8 @@ export default function DocumentViewPage() {
                 });
                 if (!response.ok || !data) throw new Error(response.status === 404 ? "Документ не найден" : "Нет доступа");
                 setDoc(data);
-            } catch (err: any) {
-                setError(err.message);
+            } catch (err) {
+                setError(caughtMessage(err));
             } finally {
                 setLoading(false);
             }

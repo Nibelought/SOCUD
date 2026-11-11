@@ -1,18 +1,17 @@
 "use client";
-"use no memo";
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import ForceGraph2D, { ForceGraphMethods } from 'react-force-graph-2d';
+import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject } from 'react-force-graph-2d';
 import { useRouter } from 'next/navigation';
+import type { components } from '@/lib/api/client';
 
-interface GraphData {
-    nodes: { id: string; name: string; group: string; spaceName: string }[];
-    links: { source: string; target: string }[];
-}
+type GraphNode = components['schemas']['GraphNodeDto'];
+type GraphLink = components['schemas']['GraphLinkDto'];
+type GraphData = { nodes: GraphNode[]; links: GraphLink[] };
 
 export default function GraphVisualizer({ data }: { data: GraphData }) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const graphRef = useRef<ForceGraphMethods | undefined>(undefined);
+    const graphRef = useRef<ForceGraphMethods<NodeObject<GraphNode>, LinkObject<GraphNode, GraphLink>> | undefined>(undefined);
     const router = useRouter();
 
     const[dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -41,7 +40,7 @@ export default function GraphVisualizer({ data }: { data: GraphData }) {
         }
     }, [isCentered]);
 
-    const handleNodeClick = (node: any) => {
+    const handleNodeClick = (node: NodeObject<GraphNode>) => {
         router.push(`/document/${node.id}`);
     };
 
@@ -49,7 +48,7 @@ export default function GraphVisualizer({ data }: { data: GraphData }) {
         <div ref={containerRef} className="absolute inset-0 bg-slate-900 overflow-hidden cursor-crosshair">
             {dimensions.width > 0 && dimensions.height > 0 && (
                 <ForceGraph2D
-                    ref={graphRef as any}
+                    ref={graphRef}
                     width={dimensions.width}
                     height={dimensions.height}
                     graphData={data}
@@ -59,7 +58,8 @@ export default function GraphVisualizer({ data }: { data: GraphData }) {
                     onEngineStop={handleEngineStop} // Триггер центрирования камеры
                     onNodeClick={handleNodeClick}
                     nodeCanvasObjectMode={() => 'after'}
-                    nodeCanvasObject={(node: any, ctx, globalScale) => {
+                    nodeCanvasObject={(node: NodeObject<GraphNode>, ctx, globalScale) => {
+                        if (node.x === undefined || node.y === undefined) return; // not positioned yet
                         const label = node.name;
                         const fontSize = 12 / globalScale;
                         ctx.font = `${fontSize}px Sans-Serif`;

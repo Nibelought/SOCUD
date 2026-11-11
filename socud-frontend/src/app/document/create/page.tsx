@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, ArrowLeft, Loader2 } from "lucide-react";
 import { api, apiErrorMessage, type components } from "@/lib/api/client";
+import { caughtMessage } from "@/lib/api/errors";
 import { sessionLostLoginUrl } from "@/lib/auth";
 
 type Space = components["schemas"]["SpaceWithCountDto"];
@@ -29,8 +30,8 @@ export default function CreateDocumentPage() {
 
                 setSpaces(data);
                 if (data.length > 0) setSpaceId(data[0].id); // Выбираем первое по умолчанию
-            } catch (err: any) {
-                setError(err.message);
+            } catch (err) {
+                setError(caughtMessage(err));
             } finally {
                 setLoading(false);
             }
@@ -56,8 +57,8 @@ export default function CreateDocumentPage() {
 
             // Перенаправляем сразу в редактор свежесозданного документа
             router.push(`/document/${doc.id}`);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(caughtMessage(err));
             setSubmitting(false);
         }
     };
