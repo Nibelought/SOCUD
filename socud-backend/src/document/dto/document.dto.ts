@@ -23,7 +23,9 @@ export class CreateDocumentDto {
 
 /** PATCH /document/:id accepts only the title; content goes through publish/Hocuspocus. */
 export class UpdateDocumentDto {
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
