@@ -22,6 +22,16 @@ export class SuccessResponseDto {
   success: boolean;
 }
 
+/** `{ restored }` returned by the restore routes: how many documents left the trash. */
+export class RestoreResponseDto {
+  @ApiProperty({
+    example: 3,
+    description:
+      'Documents restored: the document plus descendants archived with it, or the documents archived together with the space.',
+  })
+  restored: number;
+}
+
 /** Public part of a user account (never includes the password hash). */
 export class UserSummaryDto {
   @ApiProperty({ format: 'uuid' })

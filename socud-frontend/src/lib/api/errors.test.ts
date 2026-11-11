@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiErrorMessage } from './errors';
+import { apiErrorMessage, caughtMessage } from './errors';
 
 describe('apiErrorMessage', () => {
     it('uses a string message', () => {
@@ -20,5 +20,17 @@ describe('apiErrorMessage', () => {
         expect(apiErrorMessage({ message: '' }, 'fallback')).toBe('fallback');
         expect(apiErrorMessage({ message: [] }, 'fallback')).toBe('fallback');
         expect(apiErrorMessage('boom', 'fallback')).toBe('fallback');
+    });
+});
+
+describe('caughtMessage', () => {
+    it('uses the message of an Error', () => {
+        expect(caughtMessage(new Error('boom'))).toBe('boom');
+    });
+
+    it('falls back for non-Error values and empty messages', () => {
+        expect(caughtMessage('boom')).toBe('Something went wrong');
+        expect(caughtMessage(undefined, 'custom')).toBe('custom');
+        expect(caughtMessage(new Error(''), 'custom')).toBe('custom');
     });
 });

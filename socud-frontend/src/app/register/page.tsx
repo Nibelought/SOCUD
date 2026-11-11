@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { publicApi } from '@/lib/api/public-client';
-import { apiErrorMessage } from '@/lib/api/errors';
+import { apiErrorMessage, caughtMessage } from '@/lib/api/errors';
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -27,10 +27,10 @@ export default function RegisterPage() {
                 throw new Error(apiErrorMessage(error, "Registration failed"));
             }
 
-            // После успешной регистрации перенаправляем на логин
+            // After a successful registration redirect to login
             router.push("/login");
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(caughtMessage(err));
         } finally {
             setLoading(false);
         }

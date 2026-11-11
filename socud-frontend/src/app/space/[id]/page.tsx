@@ -26,7 +26,7 @@ export default function SpaceDetailsPage() {
         const token = localStorage.getItem("socud_token");
         if (!token) return router.push(sessionLostLoginUrl());
 
-        // Извлекаем ID текущего пользователя из JWT
+        // Extract the current user ID from the JWT
         try {
             const payload = JSON.parse(atob(token.split('.')[1]));
             setCurrentUserId(payload.sub);
@@ -61,14 +61,14 @@ export default function SpaceDetailsPage() {
         <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-6">
             <div className="max-w-5xl mx-auto space-y-6">
 
-                {/* Хедер (Навигация) */}
+                {/* Header (navigation) */}
                 <div className="flex items-center justify-between">
                     <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-blue-600 transition-colors">
                         <ArrowLeft className="w-4 h-4" /> Dashboard
                     </Link>
                 </div>
 
-                {/* Шапка Пространства */}
+                {/* Space header */}
                 <div className="bg-white border border-slate-200 rounded-xl p-8 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-4">
                         <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
@@ -80,7 +80,7 @@ export default function SpaceDetailsPage() {
                         </div>
                     </div>
 
-                    {/* Кнопки управления */}
+                    {/* Action buttons */}
                     <div className="flex gap-2">
                         <button
                             onClick={() => setIsSettingsOpen(true)}
@@ -97,7 +97,7 @@ export default function SpaceDetailsPage() {
                     </div>
                 </div>
 
-                {/* Список документов */}
+                {/* Document list */}
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
                         <h2 className="font-semibold text-slate-700">Documents in {space.name}</h2>
@@ -138,7 +138,7 @@ export default function SpaceDetailsPage() {
 
             </div>
 
-            {/* Модальное окно управления доступом */}
+            {/* Access management modal */}
             <AccessManagerModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}

@@ -7,8 +7,9 @@ import {
   Param,
   Delete,
   Put,
+  HttpCode,
+  HttpStatus,
   UseGuards,
-  Request,
   ParseIntPipe,
   ParseUUIDPipe,
   Query,
@@ -24,13 +25,21 @@ import {
 import { DocumentService } from './document.service';
 import {
   CreateDocumentDto,
+  GraphQueryDto,
   ManageDocumentMemberDto,
   PublishDocumentDto,
   UpdateDocumentDto,
 } from './dto/document.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user';
+import { RoleGuard } from '../permission/role.guard';
+import { RequireRole } from '../permission/require-role.decorator';
+import { Role } from '@prisma/client';
 import { SearchService } from '../search/search.service';
-import { SuccessResponseDto } from '../common/dto/common.dto';
+import {
+  RestoreResponseDto,
+  SuccessResponseDto,
+} from '../common/dto/common.dto';
 import { ApiErrors } from '../openapi/api-errors';
 import { BEARER_SCHEME } from '../openapi/swagger';
 import {
@@ -48,7 +57,10 @@ import {
 
 @ApiTags('document')
 @ApiBearerAuth(BEARER_SCHEME)
-@UseGuards(JwtAuthGuard)
+// JWT first (sets req.user), then RoleGuard, which enforces the @RequireRole() of each route.
+// Routes without a resource id (create aside, see below) are JWT-only. The service methods repeat
+// their checks as defence in depth (see RoleGuard); within a request the repeat costs no query.
+@UseGuards(JwtAuthGuard, RoleGuard)
 @Controller('document')
 export class DocumentController {
   constructor(
@@ -57,14 +69,21 @@ export class DocumentController {
   ) {}
 
   @Post()
+  @RequireRole(Role.EDITOR, {
+    resource: 'space',
+    from: 'body',
+    param: 'spaceId',
+  })
   @ApiOperation({
     summary: 'Create a document in a space (EDITOR on the space)',
   })
   @ApiCreatedResponse({ type: DocumentDto })
   @ApiErrors({ badRequest: true, forbidden: true })
-  @UseGuards(JwtAuthGuard)
-  create(@Request() req, @Body() createDocumentDto: CreateDocumentDto) {
-    return this.documentService.create(createDocumentDto, req.user.id);
+  create(
+    @CurrentUser('id') userId: string,
+    @Body() createDocumentDto: CreateDocumentDto,
+  ) {
+    return this.documentService.create(createDocumentDto, userId);
   }
 
   @Get('recent')
@@ -73,21 +92,23 @@ export class DocumentController {
   })
   @ApiOkResponse({ type: [RecentDocumentDto] })
   @ApiErrors()
-  @UseGuards(JwtAuthGuard)
-  async getRecentActivity(@Request() req) {
-    return this.documentService.findRecent(req.user.id);
+  async getRecentActivity(@CurrentUser('id') userId: string) {
+    return this.documentService.findRecent(userId);
   }
 
   @Get('graph')
   @ApiOperation({
     summary: 'Link graph of the documents the caller can read',
-    description: 'Nodes and links shaped for react-force-graph.',
+    description:
+      'Nodes and links shaped for react-force-graph. At most `limit` nodes (default 2000, max 5000), the most recently updated first; `truncated` is true when more existed.',
   })
   @ApiOkResponse({ type: KnowledgeGraphDto })
-  @ApiErrors()
-  @UseGuards(JwtAuthGuard)
-  async getGraph(@Request() req) {
-    return this.documentService.getKnowledgeGraph(req.user.id);
+  @ApiErrors({ badRequest: true })
+  async getGraph(
+    @CurrentUser('id') userId: string,
+    @Query() query: GraphQueryDto,
+  ) {
+    return this.documentService.getKnowledgeGraph(userId, query.limit);
   }
 
   @Get('search')
@@ -99,147 +120,183 @@ export class DocumentController {
   })
   @ApiOkResponse({ type: [SearchResultDto] })
   @ApiErrors()
-  @UseGuards(JwtAuthGuard)
-  async search(@Request() req, @Query('q') query: string) {
+  async search(@CurrentUser('id') userId: string, @Query('q') query: string) {
     if (!query || query.trim().length === 0) return [];
-    return this.searchService.search(req.user.id, query);
+    return this.searchService.search(userId, query);
   }
 
   @Get(':id')
+  @RequireRole(Role.VIEWER, { resource: 'document' })
   @ApiOperation({ summary: 'Read a document (VIEWER)' })
   @ApiOkResponse({ type: DocumentViewDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
-  async findOne(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
-    return this.documentService.findOne(id, req.user.id);
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentService.findOne(id, userId);
   }
 
   @Get(':id/members')
+  @RequireRole(Role.VIEWER, { resource: 'document' })
   @ApiOperation({ summary: 'Direct and space-inherited members (VIEWER)' })
   @ApiOkResponse({ type: [DocumentMemberViewDto] })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
   async getMembers(
     @Param('id', ParseUUIDPipe) documentId: string,
-    @Request() req,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.documentService.getMembersWithInheritance(
-      documentId,
-      req.user.id,
-    );
+    return this.documentService.getMembersWithInheritance(documentId, userId);
   }
 
   @Post(':id/members')
+  @RequireRole(Role.OWNER, { resource: 'document' })
   @ApiOperation({ summary: 'Add a member or change their role (OWNER)' })
   @ApiCreatedResponse({ type: DocumentMemberDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
   async addMember(
     @Param('id', ParseUUIDPipe) documentId: string,
     @Body() dto: ManageDocumentMemberDto,
-    @Request() req,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.documentService.upsertDocumentMember(
-      documentId,
-      req.user.id,
-      dto,
-    );
+    return this.documentService.upsertDocumentMember(documentId, userId, dto);
   }
 
   @Delete(':id/members/:userId')
+  @RequireRole(Role.OWNER, { resource: 'document' })
   @ApiOperation({ summary: 'Remove a member (OWNER); idempotent' })
   @ApiOkResponse({ type: SuccessResponseDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
   async removeMember(
     @Param('id', ParseUUIDPipe) documentId: string,
     @Param('userId', ParseUUIDPipe) targetUserId: string,
-    @Request() req,
+    @CurrentUser('id') userId: string,
   ) {
     return this.documentService.removeDocumentMember(
       documentId,
-      req.user.id,
+      userId,
       targetUserId,
     );
   }
 
   @Post(':id/archive')
+  @RequireRole(Role.OWNER, { resource: 'document' })
   @ApiOperation({ summary: 'Move a document to the trash (OWNER)' })
   @ApiCreatedResponse({ type: DocumentDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
-  async archiveDoc(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
-    return this.documentService.archive(id, req.user.id);
+  async archiveDoc(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentService.archive(id, userId);
   }
 
   @Patch(':id')
+  @RequireRole(Role.EDITOR, { resource: 'document' })
   @ApiOperation({ summary: 'Rename a document (EDITOR)' })
   @ApiOkResponse({ type: DocumentDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
   async updateDocument(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDocumentDto,
-    @Request() req,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.documentService.update(id, req.user.id, dto);
+    return this.documentService.update(id, userId, dto);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @RequireRole(Role.OWNER, {
+    resource: 'document',
+    includeArchived: true,
+    message: 'Only OWNERs can restore this document',
+  })
+  @ApiOperation({
+    summary: 'Restore a document from the trash (OWNER)',
+    description:
+      'Also restores descendants archived at the same moment. 409 when the document is not archived or its space is archived (restore the space first).',
+  })
+  @ApiOkResponse({ type: RestoreResponseDto })
+  @ApiErrors({
+    badRequest: true,
+    forbidden: true,
+    notFound: true,
+    conflict: true,
+  })
+  async restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentService.restoreDocument(id, userId);
   }
 
   @Delete(':id')
+  // includeArchived: the trash is reachable for hard delete (OWNERs only).
+  @RequireRole(Role.OWNER, {
+    resource: 'document',
+    includeArchived: true,
+    message: 'Only OWNERs can hard delete this document',
+  })
   @ApiOperation({
     summary: 'Permanently delete a document, also from the trash (OWNER)',
   })
   @ApiOkResponse({ type: SuccessResponseDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
-  async remove(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
-    return this.documentService.remove(id, req.user.id);
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentService.remove(id, userId);
   }
 
-  // --- УПРАВЛЕНИЕ ГРАНУЛЯРНЫМИ ПРАВАМИ ---
+  // --- Granular permissions ---
 
   @Put(':id/members')
+  @RequireRole(Role.OWNER, { resource: 'document' })
   @ApiOperation({
     summary: 'Add a member or change their role (OWNER); same as POST',
   })
   @ApiOkResponse({ type: DocumentMemberDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
   upsertMember(
-    @Request() req,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() manageMemberDto: ManageDocumentMemberDto,
   ) {
     return this.documentService.upsertDocumentMember(
       id,
-      req.user.id,
+      userId,
       manageMemberDto,
     );
   }
 
   @Get(':id/versions')
+  @RequireRole(Role.VIEWER, { resource: 'document' })
   @ApiOperation({ summary: 'Published versions, newest first (VIEWER)' })
   @ApiOkResponse({ type: [DocumentVersionSummaryDto] })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
-  async listVersions(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
-    return this.documentService.listVersions(id, req.user.id);
+  async listVersions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentService.listVersions(id, userId);
   }
 
   @Get(':id/versions/:version')
+  @RequireRole(Role.VIEWER, { resource: 'document' })
   @ApiOperation({ summary: 'One published version with its HTML (VIEWER)' })
   @ApiOkResponse({ type: DocumentVersionDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
   async getVersion(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('version', ParseIntPipe) version: number,
-    @Request() req,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.documentService.getVersion(id, version, req.user.id);
+    return this.documentService.getVersion(id, version, userId);
   }
 
   @Post(':id/publish')
+  @RequireRole(Role.EDITOR, { resource: 'document' })
   @ApiOperation({
     summary: 'Publish the current document state as a new version (EDITOR)',
     description:
@@ -247,12 +304,11 @@ export class DocumentController {
   })
   @ApiCreatedResponse({ type: PublishResponseDto })
   @ApiErrors({ badRequest: true, forbidden: true, notFound: true })
-  @UseGuards(JwtAuthGuard)
   async publish(
     @Param('id', ParseUUIDPipe) documentId: string,
     @Body() dto: PublishDocumentDto,
-    @Request() req,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.documentService.publishDocument(documentId, req.user.id, dto);
+    return this.documentService.publishDocument(documentId, userId, dto);
   }
 }

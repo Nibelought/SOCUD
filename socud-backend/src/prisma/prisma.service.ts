@@ -12,15 +12,15 @@ export class PrismaService
   private readonly pool: Pool;
 
   constructor(config: ConfigService) {
-    // 1. Создаем пул подключений через нативный JS-драйвер PostgreSQL
+    // 1. Create a connection pool with the native JS PostgreSQL driver
     const pool = new Pool({
       connectionString: config.getOrThrow<string>('DATABASE_URL'),
     });
 
-    // 2. Оборачиваем пул драйвера в совместимый с Prisma 7 адаптер
+    // 2. Wrap the pool in a Prisma 7 compatible adapter
     const adapter = new PrismaPg(pool);
 
-    // 3. Передаем адаптер в родительский класс PrismaClient
+    // 3. Pass the adapter to the PrismaClient base class
     super({ adapter });
 
     this.pool = pool;
@@ -32,7 +32,7 @@ export class PrismaService
 
   async onModuleDestroy() {
     await this.$disconnect();
-    // Обязательно освобождаем ресурсы нативного пула при остановке сервера
+    // Release the native pool on shutdown
     await this.pool.end();
   }
 }

@@ -27,6 +27,8 @@ interface Arrange {
   owners?: number;
   targetUserExists?: boolean;
   spaceExists?: boolean;
+  /** The space is in the trash (restore needs this; every other endpoint uses a live space). */
+  spaceArchived?: boolean;
 }
 
 describe('Space authorization matrix', () => {
@@ -50,6 +52,7 @@ describe('Space authorization matrix', () => {
     owners = 2,
     targetUserExists = true,
     spaceExists = true,
+    spaceArchived = false,
   }: Arrange) {
     const actorRole = (['OWNER', 'EDITOR', 'VIEWER'] as const).includes(
       actor as 'OWNER',
@@ -89,7 +92,7 @@ describe('Space authorization matrix', () => {
       spaceExists
         ? {
             id: SPACE,
-            isArchived: false,
+            isArchived: spaceArchived,
             archivedAt: new Date(),
             documents: [],
           }
@@ -158,6 +161,7 @@ describe('Space authorization matrix', () => {
       call: () => service.restoreSpace(SPACE, ACTOR),
       write: () => m(prisma.space.update),
       allowed: ['OWNER', 'ADMIN'],
+      arrange: { spaceArchived: true },
     },
     {
       name: 'getMembers',

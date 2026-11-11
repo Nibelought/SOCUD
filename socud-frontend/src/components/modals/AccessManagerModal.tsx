@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, Search, ShieldAlert, Trash2, Archive, Loader2, RefreshCw, Save } from "lucide-react";
-import { API_URL } from "@/lib/config";
-import { fetchWithAuth } from "@/lib/auth";
+import { restoreErrorMessage } from "@/lib/restore";
 import { api, apiErrorMessage, type components } from "@/lib/api/client";
 
 type RoleName = components["schemas"]["Role"];
@@ -22,16 +21,16 @@ interface Member {
     userId: string;
     role: RoleName;
     user: { id: string; email: string };
-    source?: 'direct' | 'inherited'; // ← Новое поле
+    source?: 'direct' | 'inherited'; // where the membership comes from
 }
 
 export default function AccessManagerModal({ isOpen, onClose, entityId, entityType, currentUserId, onDeleteSuccess }: AccessModalProps) {
-    // Метаданные
+    // Metadata
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [isArchived, setIsArchived] = useState(false);
 
-    // Участники и UI состояния
+    // Members and UI state
     const [members, setMembers] = useState<Member[]>([]);
     const [searchEmail, setSearchEmail] = useState("");
     const [searchResults, setSearchResults] = useState<{id: string, email: string}[]>([]);
@@ -54,8 +53,7 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
                 return data && { title: data.name, description: data.description ?? "", isArchived: data.isArchived };
             }
             const { data } = await api.GET('/document/{id}', { params: { path: { id: entityId } } });
-            // The document view endpoint does not report archive state
-            return data && { title: data.title, description: "", isArchived: false };
+            return data && { title: data.title, description: "", isArchived: data.isArchived };
         };
         const loadMembers = async (): Promise<Member[]> => {
             const { data } = isSpace
@@ -64,7 +62,7 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
             return Array.isArray(data) ? data : [];
         };
 
-        // Параллельная загрузка метаданных и участников
+        // Load metadata and members in parallel
         Promise.all([loadEntity(), loadMembers()]).then(([entityData, membersData]) => {
             setTitle(entityData?.title ?? "");
             if (isSpace) setDescription(entityData?.description ?? "");
@@ -75,7 +73,7 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
             .finally(() => setLoadingData(false));
     }, [isOpen, entityId, isSpace]);
 
-    // Поиск пользователей с debounce
+    // Debounced user search
     useEffect(() => {
         if (searchEmail.length < 3) {
             setSearchResults([]);
@@ -88,13 +86,13 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
         return () => clearTimeout(delay);
     },[searchEmail]);
 
-    // Сохранение метаданных (Название и Описание)
+    // Save metadata (title and description)
     const handleSaveMetadata = async () => {
         setActionLoading('save');
 
         const { response } = isSpace
-            ? await api.PATCH('/space/{id}', { ...pathParams, body: { title, description } }) // space.service.ts сам преобразует title → name
-            : await api.PATCH('/document/{id}', { ...pathParams, body: { title } });         // document.service.ts ожидает title
+            ? await api.PATCH('/space/{id}', { ...pathParams, body: { title, description } }) // space.service.ts maps title to name
+            : await api.PATCH('/document/{id}', { ...pathParams, body: { title } });         // document.service.ts expects title
 
         setActionLoading(null);
         if (!response.ok) alert("Failed to save changes. Check permissions.");
@@ -142,21 +140,24 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
         setActionLoading(null);
         if (response.ok) {
             setIsArchived(true);
-            onDeleteSuccess(); // Редирект или обновление UI
+            onDeleteSuccess(); // redirect or refresh the UI
         } else alert("Failed to archive. Requires OWNER permissions.");
     };
 
     const handleRestoreEntity = async () => {
         setActionLoading('restore');
-        // NOTE: the backend has no POST /space|document/:id/restore route yet (the services have
-        // restoreSpace/restoreDocument), so it is absent from the OpenAPI document and this call stays
-        // untyped. It still gets the bearer token and refresh-on-401 through fetchWithAuth.
-        const res = await fetchWithAuth(`${API_URL}/${entityType}/${entityId}/restore`, { method: 'POST' });
+        const { response, error } = isSpace
+            ? await api.POST('/space/{id}/restore', pathParams)
+            : await api.POST('/document/{id}/restore', pathParams);
         setActionLoading(null);
-        if (res.ok) {
+        if (response.ok) {
             setIsArchived(false);
-            onDeleteSuccess(); // Редирект или обновление UI
-        } else alert("Failed to restore. Requires OWNER permissions.");
+            onDeleteSuccess(); // redirect or refresh the UI
+            return;
+        }
+        // 409: nothing to restore, so the "archived" state shown here was stale
+        if (response.status === 409) setIsArchived(false);
+        alert(restoreErrorMessage(response.status, error, entityType));
     };
 
     const handleDeleteEntity = async () => {
@@ -268,7 +269,7 @@ export default function AccessManagerModal({ isOpen, onClose, entityId, entityTy
                                 {members.map(member => {
                                     const isSelf = member.userId === currentUserId;
                                     const isInherited = member.source === 'inherited';
-                                    // Наследственных участников нельзя редактировать/удалять на уровне документа
+                                    // Inherited members cannot be edited/removed at the document level
                                     const disableControls = isInherited || (isSelf && ownersCount <= 1 && member.role === 'OWNER');
 
                                     return (

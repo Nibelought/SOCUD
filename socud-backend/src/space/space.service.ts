@@ -20,7 +20,7 @@ export class SpaceService {
   ) {}
 
   async create(dto: CreateSpaceDto, userId: string) {
-    // Транзакция гарантирует: если упадет создание члена, пространство не создастся (и наоборот)
+    // The transaction guarantees the space is not created if creating the member fails (and vice versa)
     return this.prisma.$transaction(async (prisma) => {
       const space = await prisma.space.create({
         data: {
@@ -29,7 +29,7 @@ export class SpaceService {
         },
       });
 
-      // КРИТИЧЕСКИ ВАЖНО: Делаем создателя ВЛАДЕЛЬЦЕМ пространства
+      // The creator must become the space OWNER
       await prisma.spaceMember.create({
         data: {
           spaceId: space.id,
@@ -43,7 +43,7 @@ export class SpaceService {
   }
 
   async findAllForUser(userId: string) {
-    // Возвращаем только те пространства, где пользователь числится участником
+    // Return only spaces where the user is a member
     return this.prisma.space.findMany({
       where: {
         members: { some: { userId } },
@@ -72,7 +72,7 @@ export class SpaceService {
   }
 
   async findOne(spaceId: string, userId: string) {
-    // 1. Проверка прав (глобальный админ или участник пространства)
+    // 1. Access check (system admin or space member)
     await this.permissions.assertSpaceRole(
       userId,
       spaceId,
@@ -80,7 +80,7 @@ export class SpaceService {
       'You do not have access to this space',
     );
 
-    // 2. Извлечение пространства вместе с его активными документами
+    // 2. Load the space together with its active documents
     const space = await this.prisma.space.findUnique({
       where: { id: spaceId, isArchived: false },
       include: {
@@ -103,7 +103,7 @@ export class SpaceService {
   }
 
   async archiveSpace(spaceId: string, userId: string) {
-    // 1. Проверяем права (Только OWNER или SystemAdmin)
+    // 1. Access check (OWNER or system admin only)
     await this.permissions.assertSpaceRole(
       userId,
       spaceId,
@@ -111,18 +111,18 @@ export class SpaceService {
       'Only space OWNERs can delete or archive this space',
     );
 
-    // 2. Транзакционное каскадное архивирование
+    // 2. Cascade archive in a transaction
 
-    const now = new Date(); // Фиксируем единое время для всей транзакции
+    const now = new Date(); // one timestamp for the whole transaction
 
     return this.prisma.$transaction(async (tx) => {
-      // Архивируем само пространство
+      // Archive the space itself
       const space = await tx.space.update({
         where: { id: spaceId },
         data: { isArchived: true, archivedAt: now },
       });
 
-      // Архивируем ВСЕ документы внутри этого пространства
+      // Archive ALL documents in this space
       await tx.document.updateMany({
         where: { spaceId: spaceId, isArchived: false },
         data: { isArchived: true, archivedAt: now },
@@ -133,7 +133,7 @@ export class SpaceService {
   }
 
   async removeSpace(spaceId: string, userId: string) {
-    // 1. Проверяем права (Только OWNER или SystemAdmin)
+    // 1. Access check (OWNER or system admin only)
     await this.permissions.assertSpaceRole(
       userId,
       spaceId,
@@ -141,9 +141,8 @@ export class SpaceService {
       'Only space OWNERs can hard delete this space',
     );
 
-    // Физическое удаление пространства.
-    // Если в Prisma Schema у тебя настроено onDelete: Cascade для Document -> Space,
-    // то документы удалятся сами. Если нет — нужно удалять сначала документы.
+    // Hard-delete the space. Documents are removed by the onDelete: Cascade
+    // relation (Document -> Space) in the Prisma schema.
     await this.prisma.space.delete({
       where: { id: spaceId },
     });
@@ -152,7 +151,7 @@ export class SpaceService {
   }
 
   async updateSpace(spaceId: string, userId: string, dto: UpdateSpaceDto) {
-    // 1. Проверяем права (Только OWNER, EDITOR или SystemAdmin)
+    // 1. Access check (OWNER, EDITOR or system admin only)
     await this.permissions.assertSpaceRole(
       userId,
       spaceId,
@@ -160,8 +159,8 @@ export class SpaceService {
       'Only OWNERs and EDITORs can update space details',
     );
 
-    // 2. Формируем объект обновления.
-    // Маппим title с фронтенда на поле name в базе данных (согласно твоему методу create)
+    // 2. Build the update object.
+    // The frontend's title maps to the name column (same as in create)
     const updateData: Prisma.SpaceUpdateInput = {};
     if (dto.title !== undefined) updateData.name = dto.title.trim();
     if (dto.description !== undefined) updateData.description = dto.description;
@@ -172,8 +171,16 @@ export class SpaceService {
     });
   }
 
-  async restoreSpace(spaceId: string, userId: string) {
-    // 1. Проверяем права (Только OWNER или SystemAdmin)
+  /**
+   * Takes a space out of the trash (OWNERs and admins only). Only the documents archived together
+   * with the space (identical `archivedAt`) come back; ones the user archived earlier stay in
+   * the trash. Returns how many documents were restored. 409 if the space is not archived.
+   */
+  async restoreSpace(
+    spaceId: string,
+    userId: string,
+  ): Promise<{ restored: number }> {
+    // 1. Access check (OWNER or system admin only)
     await this.permissions.assertSpaceRole(
       userId,
       spaceId,
@@ -182,37 +189,31 @@ export class SpaceService {
     );
 
     return this.prisma.$transaction(async (tx) => {
-      // Получаем состояние ДО восстановления, чтобы узнать точное время архивации
-      const spaceBeforeRestore = await tx.space.findUnique({
+      // The state BEFORE the restore gives the exact archive timestamp of the cascade.
+      const before = await tx.space.findUnique({
         where: { id: spaceId },
-        select: { archivedAt: true },
+        select: { isArchived: true, archivedAt: true },
       });
-
-      if (!spaceBeforeRestore) {
-        throw new NotFoundException('Space not found');
+      if (!before) throw new NotFoundException('Space not found');
+      if (!before.isArchived) {
+        throw new ConflictException('Space is not archived');
       }
 
-      // 2. Восстанавливаем само пространство
-      const restoredSpace = await tx.space.update({
+      await tx.space.update({
         where: { id: spaceId },
         data: { isArchived: false, archivedAt: null },
       });
 
-      // 3. Каскадное восстановление документов
-      // Восстанавливаем ТОЛЬКО те, что были заархивированы ОДНОВРЕМЕННО с пространством.
-      // Это защищает от случайного восстановления документов, скрытых пользователем вручную ранее.
-      if (spaceBeforeRestore.archivedAt) {
-        await tx.document.updateMany({
-          where: {
-            spaceId: spaceId,
-            isArchived: true,
-            archivedAt: spaceBeforeRestore.archivedAt, // Точное совпадение timestamp
-          },
-          data: { isArchived: false, archivedAt: null },
-        });
-      }
-
-      return restoredSpace;
+      if (!before.archivedAt) return { restored: 0 };
+      const { count } = await tx.document.updateMany({
+        where: {
+          spaceId,
+          isArchived: true,
+          archivedAt: before.archivedAt, // exact timestamp match
+        },
+        data: { isArchived: false, archivedAt: null },
+      });
+      return { restored: count };
     });
   }
 

@@ -2,13 +2,16 @@
 
 import { useState, useEffect, useRef } from 'react';
 import katex from 'katex';
+import type { Editor } from '@tiptap/react';
 import { X, Check, Eye, Type, Maximize2 } from 'lucide-react';
 import { KATEX_OPTIONS } from '@/lib/security';
+import { caughtMessage } from '@/lib/api/errors';
+import { mathAttrKey } from './extensions/mathNodes';
 
 interface LatexEditorModalProps {
     isOpen: boolean;
     onClose: () => void;
-    editor: any;
+    editor: Editor | null;
     initialLatex?: string;
     isDisplay?: boolean;
     isEditing?: boolean;
@@ -44,9 +47,9 @@ export default function LatexEditorModal({ isOpen, onClose, editor, initialLatex
             });
             setPreviewHtml(html);
             setError(null);
-        } catch (err: any) {
+        } catch (err) {
             setPreviewHtml('');
-            setError(err.message || 'Invalid LaTeX syntax');
+            setError(caughtMessage(err, 'Invalid LaTeX syntax'));
         }
     }, [latex, displayMode]);
 
@@ -65,16 +68,15 @@ export default function LatexEditorModal({ isOpen, onClose, editor, initialLatex
         }
 
         const specAttrs = targetNode.spec.attrs || {};
-        const attrName = 'latex' in specAttrs ? 'latex' : ('content' in specAttrs ? 'content' : 'text');
-        const attrs: any = { [attrName]: latex };
+        const attrs: Record<string, unknown> = { [mathAttrKey(targetNode)]: latex };
         if (targetNode.name === 'math' && 'display' in specAttrs) attrs.display = displayMode;
 
         if (isEditing && nodePos !== undefined) {
             try {
-                // Пытаемся обновить существующий узел по сохранённой позиции
+                // Try to update the existing node at the saved position
                 editor.chain().focus().setNodeSelection(nodePos).updateAttributes(targetNode.name, attrs).run();
             } catch {
-                // Fallback: если позиция сместилась из-за Yjs-синхронизации, вставляем новый узел
+                // Fallback: if the position shifted due to Yjs sync, insert a new node
                 console.warn('[Math] Position shifted during collaboration. Inserting new node.');
                 editor.chain().focus().insertContent({ type: targetNode.name, attrs }).run();
             }

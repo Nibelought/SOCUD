@@ -19,11 +19,11 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
     const [loading, setLoading] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // Автофокус при открытии
+    // Autofocus on open
     useEffect(() => {
         if (isOpen) {
             setTimeout(() => inputRef.current?.focus(), 100);
-            document.body.style.overflow = "hidden"; // Блокируем скролл страницы
+            document.body.style.overflow = "hidden"; // lock page scroll
         } else {
             document.body.style.overflow = "auto";
             setQuery("");
@@ -32,7 +32,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
         return () => { document.body.style.overflow = "auto"; };
     }, [isOpen]);
 
-    // Закрытие по Escape
+    // Close on Escape
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === "Escape") onClose();
@@ -41,7 +41,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [onClose]);
 
-    // Debounce и Fetch логика
+    // Debounce and fetch logic
     useEffect(() => {
         if (!query.trim()) {
             setResults([]);
@@ -64,7 +64,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
             } finally {
                 setLoading(false);
             }
-        }, 500); // 500ms задержка
+        }, 500); // 500 ms delay
 
         return () => clearTimeout(delayDebounceFn);
     }, [query]);
@@ -73,7 +73,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-slate-900/50 backdrop-blur-sm px-4">
-            {/* Клик по фону для закрытия */}
+            {/* Click on the backdrop to close */}
             <div className="absolute inset-0" onClick={onClose}></div>
 
             <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
@@ -122,7 +122,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
                                     </span>
                                 </div>
 
-                                {/* Баджи типа поиска */}
+                                {/* Search type badges */}
                                 {result.type === 'semantic' ? (
                                     <span className="flex items-center gap-1 text-[10px] font-bold tracking-wider uppercase text-purple-600 bg-purple-100 px-2 py-1 rounded-md">
                                         <Sparkles className="w-3 h-3" /> AI Semantic {result.score && `(${(result.score * 100).toFixed(0)}%)`}

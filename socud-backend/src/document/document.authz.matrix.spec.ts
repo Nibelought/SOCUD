@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { DocumentService } from './document.service';
 import { PermissionService } from '../permission/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -170,6 +170,8 @@ describe('Document authorization matrix', () => {
     /** Mutation that must run when allowed; null for read-only endpoints. */
     write: (() => jest.Mock) | null;
     allowed: Row;
+    /** The document must be in the trash for the call to succeed (restore). */
+    archived?: boolean;
   }
 
   const endpoints = (): Endpoint[] => [
@@ -230,6 +232,7 @@ describe('Document authorization matrix', () => {
       call: () => service.restoreDocument(DOC, ACTOR),
       write: () => m(prisma.document.update),
       allowed: OWNER_ONLY,
+      archived: true,
     },
   ];
 
@@ -250,7 +253,7 @@ describe('Document authorization matrix', () => {
     (_label, scenario, column) => {
       it.each(names)('%s', async (name) => {
         const endpoint = endpoints().find((e) => e.name === name)!;
-        arrange(scenario);
+        arrange(scenario, { archived: endpoint.archived });
 
         if (endpoint.allowed[column]) {
           await expect(endpoint.call()).resolves.toBeDefined();
@@ -432,13 +435,11 @@ describe('Document authorization matrix', () => {
   });
 
   describe('list endpoints are scoped to the caller', () => {
-    it('findRecent and graph filter by membership for normal users', async () => {
+    it('findRecent filters by membership for normal users', async () => {
       arrange(SCENARIOS[2]);
       m(prisma.document.findMany).mockResolvedValue([]);
-      m(prisma.documentLink.findMany).mockResolvedValue([]);
 
       await service.findRecent(ACTOR);
-      await service.getKnowledgeGraph(ACTOR);
 
       const scoped = {
         isArchived: false,
@@ -447,10 +448,25 @@ describe('Document authorization matrix', () => {
           { members: { some: { userId: ACTOR } } },
         ],
       };
-      for (const call of m(prisma.document.findMany).mock.calls) {
-        expect((call[0] as { where: unknown }).where).toEqual(scoped);
-      }
-      expect(m(prisma.document.findMany)).toHaveBeenCalledTimes(2);
+      expect(m(prisma.document.findMany)).toHaveBeenCalledTimes(1);
+      expect(
+        (m(prisma.document.findMany).mock.calls[0][0] as { where: unknown })
+          .where,
+      ).toEqual(scoped);
+    });
+
+    it('the graph filters inside SQL by the caller (membership, archive state)', async () => {
+      arrange(SCENARIOS[2]);
+      m(prisma.$queryRaw).mockResolvedValue([]);
+
+      await service.getKnowledgeGraph(ACTOR);
+
+      const [sql] = m(prisma.$queryRaw).mock.calls[0] as [Prisma.Sql];
+      expect(sql.values).toContain(ACTOR);
+      expect(sql.sql).toContain('"isArchived" = false');
+      expect(sql.sql).toContain('"SpaceMember"');
+      expect(sql.sql).toContain('"DocumentMember"');
+      expect(m(prisma.document.findMany)).not.toHaveBeenCalled();
     });
 
     it('admins only get the isArchived filter', async () => {

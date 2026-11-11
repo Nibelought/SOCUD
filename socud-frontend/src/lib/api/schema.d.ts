@@ -233,6 +233,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/space/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a space from the trash (OWNER)
+         * @description Restores the documents archived together with the space. 409 when the space is not archived.
+         */
+        post: operations["Space_restoreSpace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/document": {
         parameters: {
             query?: never;
@@ -276,7 +296,7 @@ export interface paths {
         };
         /**
          * Link graph of the documents the caller can read
-         * @description Nodes and links shaped for react-force-graph.
+         * @description Nodes and links shaped for react-force-graph. At most `limit` nodes (default 2000, max 5000), the most recently updated first; `truncated` is true when more existed.
          */
         get: operations["Document_getGraph"];
         put?: never;
@@ -370,6 +390,26 @@ export interface paths {
         put?: never;
         /** Move a document to the trash (OWNER) */
         post: operations["Document_archiveDoc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/document/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a document from the trash (OWNER)
+         * @description Also restores descendants archived at the same moment. 409 when the document is not archived or its space is archived (restore the space first).
+         */
+        post: operations["Document_restore"];
         delete?: never;
         options?: never;
         head?: never;
@@ -584,6 +624,13 @@ export interface components {
             spaceId: string;
             role: components["schemas"]["Role"];
         };
+        RestoreResponseDto: {
+            /**
+             * @description Documents restored: the document plus descendants archived with it, or the documents archived together with the space.
+             * @example 3
+             */
+            restored: number;
+        };
         CreateDocumentDto: {
             /** Format: uuid */
             spaceId: string;
@@ -660,6 +707,8 @@ export interface components {
         KnowledgeGraphDto: {
             nodes: components["schemas"]["GraphNodeDto"][];
             links: components["schemas"]["GraphLinkDto"][];
+            /** @description True when more readable documents existed than `limit`: the graph shows the most recently updated ones. */
+            truncated: boolean;
         };
         SearchResultDto: {
             /** Format: uuid */
@@ -690,6 +739,12 @@ export interface components {
             contentHtml: string | null;
             /** Format: date-time */
             updatedAt: string;
+            /**
+             * @description Whether the document is in the trash. Archived documents are hidden from everyone on this
+             *     route (404), so a successful read always reports `false` today; the field lets clients rely on
+             *     the flag instead of assuming it.
+             */
+            isArchived: boolean;
             space: components["schemas"]["DocumentSpaceNameDto"];
         };
         DocumentMemberViewDto: {
@@ -1507,6 +1562,72 @@ export interface operations {
             };
         };
     };
+    Space_restoreSpace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreResponseDto"];
+                };
+            };
+            /** @description Validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Conflicts with current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+        };
+    };
     Document_create: {
         parameters: {
             query?: never;
@@ -1587,7 +1708,10 @@ export interface operations {
     };
     Document_getGraph: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of nodes; the most recently updated documents are kept. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1600,6 +1724,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KnowledgeGraphDto"];
+                };
+            };
+            /** @description Validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
                 };
             };
             /** @description Not authenticated */
@@ -2104,6 +2237,72 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+        };
+    };
+    Document_restore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreResponseDto"];
+                };
+            };
+            /** @description Validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Insufficient role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponseDto"];
+                };
+            };
+            /** @description Conflicts with current state */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

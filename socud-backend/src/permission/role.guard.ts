@@ -16,11 +16,19 @@ import {
 /**
  * Enforces `@RequireRole()`: resolves the resource id from the request and delegates to
  * `PermissionService`, so the status codes are the service's (404 missing/archived document,
- * 403 insufficient role). Routes without the decorator pass through.
+ * 403 insufficient role). Routes without the decorator pass through. Ids must be UUIDs (a
+ * malformed one is a 400, like `ParseUUIDPipe`).
  *
- * Not yet applied to existing routes: the services still enforce access themselves (the
- * Phase-1 authz matrix specs test at that layer, and document methods need the row the check
- * loads). Adopt it for new endpoints; ids must be UUIDs.
+ * Applied at class level (`@UseGuards(JwtAuthGuard, RoleGuard)`) on `DocumentController` and
+ * `SpaceController`: every route that targets a space or a document declares its minimum role, and
+ * the HTTP-level matrix specs (`*.guard.matrix.spec.ts`) pin route x role -> status.
+ *
+ * The services deliberately KEEP their own checks (defence in depth): they are exported and
+ * called outside HTTP routes' reach (and by the service-level matrix specs), and `findOne` needs the
+ * row the check loads. Repeating the check costs no extra query within an HTTP request, because
+ * `PermissionService` reuses the document and the admin flag the first check loaded
+ * (`request-memo.ts`). One ordering consequence: the guard runs before the body is validated, so
+ * a caller without the role gets 403 even for an invalid body.
  */
 @Injectable()
 export class RoleGuard implements CanActivate {

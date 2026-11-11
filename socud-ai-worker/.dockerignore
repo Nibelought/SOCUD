@@ -1,0 +1,11 @@
+# Only the application modules are copied (see Dockerfile); this keeps the build context small and secrets out of it.
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+tests/
+scripts/

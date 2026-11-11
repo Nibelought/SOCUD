@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setAccessToken } from '@/lib/auth';
 import { publicApi } from '@/lib/api/public-client';
-import { apiErrorMessage } from '@/lib/api/errors';
+import { apiErrorMessage, caughtMessage } from '@/lib/api/errors';
 import { DEFAULT_AFTER_LOGIN, safeNextPath } from '@/lib/session';
 
 export default function LoginPage() {
@@ -30,14 +30,14 @@ export default function LoginPage() {
                 throw new Error(apiErrorMessage(error, "Login failed"));
             }
 
-            // Refresh-токен приходит в httpOnly cookie; в localStorage хранится только access
+            // The refresh token arrives in an httpOnly cookie; only the access token is kept in localStorage
             setAccessToken(data.access_token);
 
             // Return to the page the proxy / session expiry sent us from (validated same-origin path).
             const next = safeNextPath(new URLSearchParams(window.location.search).get("next"));
             router.push(next ?? DEFAULT_AFTER_LOGIN);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(caughtMessage(err));
         } finally {
             setLoading(false);
         }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, ArrowLeft, Loader2 } from "lucide-react";
 import { api, apiErrorMessage, type components } from "@/lib/api/client";
+import { caughtMessage } from "@/lib/api/errors";
 import { sessionLostLoginUrl } from "@/lib/auth";
 
 type Space = components["schemas"]["SpaceWithCountDto"];
@@ -28,9 +29,9 @@ export default function CreateDocumentPage() {
                 if (!response.ok || !data) throw new Error("Failed to load spaces");
 
                 setSpaces(data);
-                if (data.length > 0) setSpaceId(data[0].id); // Выбираем первое по умолчанию
-            } catch (err: any) {
-                setError(err.message);
+                if (data.length > 0) setSpaceId(data[0].id); // default to the first space
+            } catch (err) {
+                setError(caughtMessage(err));
             } finally {
                 setLoading(false);
             }
@@ -45,7 +46,7 @@ export default function CreateDocumentPage() {
         setError("");
 
         try {
-            // POST запрос к DocumentModule (из твоей Фазы 1: dto.title, dto.spaceId)
+            // POST to DocumentModule (dto.title, dto.spaceId)
             const { data: doc, error } = await api.POST("/document", {
                 body: { title, spaceId },
             });
@@ -54,10 +55,10 @@ export default function CreateDocumentPage() {
                 throw new Error(apiErrorMessage(error, "Failed to create document"));
             }
 
-            // Перенаправляем сразу в редактор свежесозданного документа
+            // Redirect straight to the editor of the new document
             router.push(`/document/${doc.id}`);
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            setError(caughtMessage(err));
             setSubmitting(false);
         }
     };

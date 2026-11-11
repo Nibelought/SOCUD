@@ -111,8 +111,20 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
 
+      # PyTorch (CPU wheels) variant of the AI worker for Linux. Build only: the model (~8 GB) is never downloaded here.
+      - name: Build AI worker image (CPU)
+        uses: docker/build-push-action@v6
+        with:
+          context: socud-ai-worker
+          push: false
+          build-args: TORCH_VARIANT=cpu
+          cache-from: type=gha,scope=ai-worker
+          cache-to: type=gha,scope=ai-worker,mode=max
+
       - name: Validate compose file
-        run: POSTGRES_PASSWORD=ci-dummy docker compose --profile app config -q
+        run: |
+          POSTGRES_PASSWORD=ci-dummy docker compose --profile app config -q
+          POSTGRES_PASSWORD=ci-dummy docker compose --profile app --profile worker config -q
 
       - name: dev.sh embedding-profile rules
         run: bash dev.test.sh
@@ -131,9 +143,10 @@ jobs:
           python-version: "3.12"
 
       # MLX is macOS/Apple Silicon only, so the model is never loaded in CI. Only requirements-dev.txt
-      # (no mlx) is installed; tests that need mlx skip themselves via pytest.importorskip.
+      # (no mlx) is installed, with the pinned transitive versions of constraints.txt; tests that need mlx skip
+      # themselves via pytest.importorskip.
       - name: Install dev dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -c constraints.txt -r requirements-dev.txt
 
       - name: Lint
         run: ruff check .

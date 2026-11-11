@@ -7,8 +7,9 @@ import dynamic from "next/dynamic";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { api, type components } from '@/lib/api/client';
 import { sessionLostLoginUrl } from "@/lib/auth";
+import { graphTruncationNotice } from "@/lib/graphNotice";
 
-// КРИТИЧЕСКИ ВАЖНО: Отключаем SSR
+// Must disable SSR
 const DynamicGraph = dynamic(
     () => import("@/components/graph/GraphVisualizer"),
     { ssr: false, loading: () => <div className="flex justify-center items-center h-[80vh] text-slate-500"><Loader2 className="w-8 h-8 animate-spin" /></div> }
@@ -16,7 +17,7 @@ const DynamicGraph = dynamic(
 
 export default function KnowledgeGraphPage() {
     const router = useRouter();
-    const [graphData, setGraphData] = useState<components["schemas"]["KnowledgeGraphDto"]>({ nodes: [], links: [] });
+    const [graphData, setGraphData] = useState<components["schemas"]["KnowledgeGraphDto"]>({ nodes: [], links: [], truncated: false });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -34,6 +35,8 @@ export default function KnowledgeGraphPage() {
                 setLoading(false);
             });
     }, [router]);
+
+    const truncationNotice = graphTruncationNotice(graphData.truncated, graphData.nodes.length);
 
     return (
         <div className="min-h-screen bg-slate-900 flex flex-col">
@@ -53,9 +56,14 @@ export default function KnowledgeGraphPage() {
                 </div>
             </header>
 
-            {/* ГРАФ */}
+            {/* Graph */}
             <main className="flex-1 relative">
                 {!loading && <DynamicGraph data={graphData} />}
+                {truncationNotice && (
+                    <p role="status" className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 rounded-full bg-slate-950/80 px-3 py-1 text-xs text-slate-400 pointer-events-none">
+                        {truncationNotice}
+                    </p>
+                )}
             </main>
         </div>
     );

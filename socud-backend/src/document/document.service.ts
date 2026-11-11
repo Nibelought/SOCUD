@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
+  ConflictException,
   Logger,
   Optional,
 } from '@nestjs/common';
@@ -13,8 +14,11 @@ import {
   ManageDocumentMemberDto,
   UpdateDocumentDto,
   PublishDocumentDto,
+  GRAPH_DEFAULT_LIMIT,
+  GRAPH_MAX_LIMIT,
 } from './dto/document.dto';
-import { Role } from '@prisma/client';
+import { GraphLinkDto, GraphNodeDto } from './dto/document-response.dto';
+import { Prisma, Role } from '@prisma/client';
 import { sanitizeDocumentHtml } from '../common/html-sanitizer';
 import { chunkHtml } from '../pipeline/chunker';
 import { htmlToPlainText } from '../pipeline/html-text';
@@ -66,19 +70,20 @@ export class DocumentService {
   }
 
   async findOne(documentId: string, userId: string) {
-    // 1. Проверяем права на чтение
+    // 1. Check read access
     const document = await this.permissions.assertDocumentRole(
       userId,
       documentId,
       Role.VIEWER,
     );
 
-    // 2. Возвращаем строго те поля, которые нужны фронтенду для режима просмотра
+    // 2. Return only the fields the frontend needs for view mode
     return {
       id: document.id,
       title: document.title,
       contentHtml: document.contentHtml,
       updatedAt: document.updatedAt,
+      isArchived: document.isArchived,
       space: {
         name: document.space?.name || 'Unknown Space',
       },
@@ -99,7 +104,7 @@ export class DocumentService {
     return updatedDocument;
   }
 
-  // 1. Мягкое удаление (Архивация)
+  // 1. Soft delete (archive)
   async archive(documentId: string, userId: string) {
     await this.permissions.assertDocumentRole(userId, documentId, Role.OWNER);
 
@@ -112,9 +117,9 @@ export class DocumentService {
     });
   }
 
-  // 3. Жесткое удаление (Hard Delete)
+  // 3. Hard delete
   async remove(documentId: string, userId: string) {
-    // Удалять могут только OWNER (и из корзины: assertDocumentOwner видит архивные документы).
+    // Only an OWNER may delete (including from the trash: assertDocumentOwner sees archived documents).
     await this.permissions.assertDocumentOwner(
       userId,
       documentId,
@@ -188,11 +193,11 @@ export class DocumentService {
     userId: string,
     dto: PublishDocumentDto,
   ) {
-    // 1. Проверка прав на запись (Только OWNER или EDITOR могут публиковать)
+    // 1. Write access check (only OWNER or EDITOR may publish)
     await this.permissions.assertDocumentRole(userId, documentId, Role.EDITOR);
 
-    // 2. Источник контента — состояние Yjs на сервере (живое или последнее сохранённое);
-    // HTML от клиента используется только если у документа ещё нет Yjs-состояния.
+    // 2. Content source is the server-side Yjs state (live or last persisted);
+    // client HTML is used only if the document has no Yjs state yet.
     let yjsState = this.liveDocuments?.getState(documentId) ?? null;
     if (!yjsState) {
       const stored = await this.prisma.document.findUnique({
@@ -207,15 +212,15 @@ export class DocumentService {
       dto.html,
     );
 
-    // 3. Ссылки на другие документы (паттерн /documents/UUID) и чанки для эмбеддингов
+    // 3. Links to other documents (/documents/UUID pattern) and chunks for embeddings
     const candidateLinks = extractLinkedDocumentIds(html, documentId);
     const chunks = chunkHtml(html);
-    // Никогда не логируем содержимое документа
+    // Never log document content
     this.logger.log(
       `[Publish] Doc: ${documentId} | HTML length: ${html.length} | Links: ${candidateLinks.length}`,
     );
 
-    // 4. Транзакция — только работа с БД (никаких сетевых вызовов): документ, версия, чанки, связи
+    // 4. Transaction: DB work only (no network calls): document, version, chunks, links
     const { version, links } = await this.prisma.$transaction(
       async (tx) => {
         const updated = await tx.document.update({
@@ -242,7 +247,7 @@ export class DocumentService {
           },
         });
 
-        // Новые чанки без эмбеддинга; вектора запишет задача embed-document
+        // New chunks have no embedding yet; the embed-document job writes the vectors
         await tx.documentChunk.deleteMany({ where: { documentId } });
         if (chunks.length > 0) {
           await tx.documentChunk.createMany({
@@ -254,7 +259,7 @@ export class DocumentService {
           });
         }
 
-        // Ссылка на несуществующий/удалённый документ нарушила бы FK и сорвала бы публикацию
+        // A link to a missing/deleted document would violate the FK and abort publishing
         const existing =
           candidateLinks.length > 0
             ? await tx.document.findMany({
@@ -273,7 +278,7 @@ export class DocumentService {
               sourceDocId: documentId,
               targetDocId: targetId,
             })),
-            skipDuplicates: true, // Защита от дублей на уровне БД
+            skipDuplicates: true, // DB-level duplicate protection
           });
         }
         return { version, links };
@@ -281,8 +286,8 @@ export class DocumentService {
       { timeout: 15_000 },
     );
 
-    // 5. После коммита ставим эмбеддинг в очередь. Если Redis недоступен, публикация всё равно
-    // успешна; задачу подхватит reconcile/backfill (embeddedVersion < publishedVersion).
+    // 5. After commit, enqueue the embedding. If Redis is down the publish still succeeds;
+    // reconcile/backfill picks the job up later (embeddedVersion < publishedVersion).
     const embeddingQueued = this.queue
       ? await this.queue.enqueueEmbedDocument({ documentId, version })
       : false;
@@ -323,7 +328,7 @@ export class DocumentService {
         'Document has no content yet; open it in the editor first',
       );
     }
-    // Санитизация: в БД попадает только HTML из белого списка (защита от stored XSS)
+    // Sanitization: only allow-listed HTML reaches the DB (stored XSS protection)
     const html = sanitizeDocumentHtml(clientHtml);
     return { html, text: htmlToPlainText(html) };
   }
@@ -362,72 +367,119 @@ export class DocumentService {
     return found;
   }
 
-  public async getKnowledgeGraph(userId: string) {
-    // 1. Формируем безопасное условие выборки (IDOR защита)
-    const whereClause = await this.permissions.accessibleDocumentsWhere(userId);
+  /**
+   * Link graph of the documents the caller can read, built in ONE SQL statement: access control
+   * (`accessibleDocumentsSql`, the SQL twin of the listing filter) and the "both ends are visible"
+   * edge filter run in the database, so no id list of the accessible set is shipped to the app and
+   * back. At most `limit` nodes, the most recently updated first; `truncated` tells whether more
+   * existed. Links only connect kept nodes.
+   */
+  public async getKnowledgeGraph(
+    userId: string,
+    limit: number = GRAPH_DEFAULT_LIMIT,
+  ) {
+    const max = Math.min(Math.max(Math.trunc(limit), 1), GRAPH_MAX_LIMIT);
+    const access = this.permissions.accessibleDocumentsSql(userId, 'd');
 
-    // 2. Вытаскиваем ВСЕ доступные узлы за 1 запрос (устранение N+1)
-    const documents = await this.prisma.document.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        title: true,
-        spaceId: true,
-        space: { select: { name: true } },
-      },
-    });
+    // Fetch max + 1 rows to learn whether the graph was cut, then keep the first `max`.
+    const [row] = await this.prisma.$queryRaw<
+      {
+        nodes: GraphNodeDto[];
+        links: GraphLinkDto[];
+        truncated: boolean;
+      }[]
+    >(Prisma.sql`
+      WITH picked AS (
+        SELECT d."id", d."title", d."spaceId", s."name" AS "spaceName",
+               ROW_NUMBER() OVER (ORDER BY d."updatedAt" DESC, d."id") AS rn
+        FROM "Document" d
+        JOIN "Space" s ON s."id" = d."spaceId"
+        WHERE ${access}
+        ORDER BY d."updatedAt" DESC, d."id"
+        LIMIT ${max + 1}
+      ),
+      kept AS (SELECT * FROM picked WHERE rn <= ${max})
+      SELECT
+        COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+                   'id', k."id", 'name', k."title", 'group', k."spaceId", 'spaceName', k."spaceName"
+                 ) ORDER BY k.rn)
+          FROM kept k
+        ), '[]'::jsonb) AS nodes,
+        COALESCE((
+          SELECT jsonb_agg(jsonb_build_object('source', l."sourceDocId", 'target', l."targetDocId")
+                           ORDER BY l."sourceDocId", l."targetDocId")
+          FROM "DocumentLink" l
+          JOIN kept ks ON ks."id" = l."sourceDocId"
+          JOIN kept kt ON kt."id" = l."targetDocId"
+        ), '[]'::jsonb) AS links,
+        EXISTS (SELECT 1 FROM picked WHERE rn > ${max}) AS truncated
+    `);
 
-    const accessibleDocIds = documents.map((doc) => doc.id);
-
-    // 3. Вытаскиваем связи СТРОГО между доступными узлами
-    const links = await this.prisma.documentLink.findMany({
-      where: {
-        sourceDocId: { in: accessibleDocIds },
-        targetDocId: { in: accessibleDocIds },
-      },
-    });
-
-    // 4. Форматируем данные под react-force-graph
     return {
-      nodes: documents.map((doc) => ({
-        id: doc.id,
-        name: doc.title,
-        group: doc.spaceId, // Для автоматической раскраски по пространствам
-        spaceName: doc.space?.name || 'Unknown Space',
-      })),
-      links: links.map((link) => ({
-        source: link.sourceDocId,
-        target: link.targetDocId,
-      })),
+      nodes: row?.nodes ?? [],
+      links: row?.links ?? [],
+      truncated: row?.truncated ?? false,
     };
   }
 
-  async restoreDocument(documentId: string, userId: string) {
-    // 1. Прямая проверка прав: assertDocumentRole скрывает архивные документы,
-    // поэтому используется assertDocumentOwner (аналогично методу remove)
-    await this.permissions.assertDocumentOwner(
+  /**
+   * Takes a document out of the trash (OWNERs and admins only; `assertDocumentOwner` also sees
+   * archived rows). Descendants restore with it only when they were archived at the very same
+   * moment (equal `archivedAt`), so documents the user archived separately stay in the trash.
+   * Returns how many documents were restored.
+   *
+   * 409 when the document is not archived, or when its space is: a document restored inside an
+   * archived space would show up in recent/graph/search while its space is hidden, so the
+   * space has to be restored first.
+   */
+  async restoreDocument(
+    documentId: string,
+    userId: string,
+  ): Promise<{ restored: number }> {
+    // assertDocumentRole hides archived documents, hence the OWNER check that does not (as remove).
+    const doc = await this.permissions.assertDocumentOwner(
       userId,
       documentId,
       'Only OWNERs can restore this document',
     );
+    if (!doc.isArchived) {
+      throw new ConflictException('Document is not archived');
+    }
+    if (doc.space.isArchived) {
+      throw new ConflictException(
+        'The space of this document is archived; restore the space first',
+      );
+    }
 
-    // 2. Восстанавливаем сам документ
-    await this.prisma.document.update({
-      where: { id: documentId },
-      data: { isArchived: false, archivedAt: null },
+    const archivedAt = doc.archivedAt;
+    const restore = { isArchived: false, archivedAt: null };
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.document.update({ where: { id: documentId }, data: restore });
+      let restored = 1;
+
+      // Walk down the hierarchy level by level; restored rows no longer match, so it terminates.
+      let level = [documentId];
+      while (archivedAt && level.length > 0) {
+        const children = await tx.document.findMany({
+          where: { parentId: { in: level }, isArchived: true, archivedAt },
+          select: { id: true },
+        });
+        if (children.length === 0) break;
+        level = children.map((child) => child.id);
+        await tx.document.updateMany({
+          where: { id: { in: level } },
+          data: restore,
+        });
+        restored += level.length;
+      }
+      return { restored };
     });
-
-    // 3. Каскадное восстановление прямых дочерних документов (по иерархии)
-    await this.prisma.document.updateMany({
-      where: { parentId: documentId }, // ← Исправлено: parentId вместо documentId
-      data: { isArchived: false, archivedAt: null },
-    });
-
-    return { success: true };
   }
 
   async getMembersWithInheritance(documentId: string, userId: string) {
-    // Проверяем, что запрашивающий вообще имеет доступ к документу
+    // Make sure the requester has access to the document at all
     await this.permissions.assertDocumentRole(userId, documentId, Role.VIEWER);
 
     const doc = await this.prisma.document.findUnique({
@@ -446,7 +498,7 @@ export class DocumentService {
 
     if (!doc) throw new NotFoundException('Document not found');
 
-    // 1. Прямые участники документа
+    // 1. Direct document members
     const directMembers = doc.members.map((m) => ({
       userId: m.userId,
       role: m.role,
@@ -454,7 +506,7 @@ export class DocumentService {
       source: 'direct' as const,
     }));
 
-    // 2. Наследственные участники пространства (исключаем тех, у кого уже есть прямые права)
+    // 2. Members inherited from the space (excluding those who already have direct access)
     const inheritedMembers = doc.space.members
       .filter((sm) => !directMembers.some((dm) => dm.userId === sm.userId))
       .map((sm) => ({

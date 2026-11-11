@@ -2,10 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { getSchema } from '@tiptap/core';
 import { prosemirrorJSONToYXmlFragment } from 'y-prosemirror';
 import * as Y from 'yjs';
@@ -97,6 +99,188 @@ describe('DocumentService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('findOne', () => {
+    it('returns the view fields including isArchived', async () => {
+      allowPublish();
+      const updatedAt = new Date();
+      m(prisma.document.findUnique).mockResolvedValue({
+        id: 'doc',
+        title: 'T',
+        contentHtml: '<p>x</p>',
+        updatedAt,
+        isArchived: false,
+        members: [],
+        space: { name: 'Space', members: [{ role: 'VIEWER' }] },
+      });
+
+      await expect(service.findOne('doc', 'user')).resolves.toEqual({
+        id: 'doc',
+        title: 'T',
+        contentHtml: '<p>x</p>',
+        updatedAt,
+        isArchived: false,
+        space: { name: 'Space' },
+      });
+    });
+  });
+
+  describe('getKnowledgeGraph', () => {
+    const graphRow = {
+      nodes: [{ id: 'a', name: 'A', group: 's', spaceName: 'S' }],
+      links: [{ source: 'a', target: 'a' }],
+      truncated: false,
+    };
+    const sqlOf = () => {
+      const [sql] = m(prisma.$queryRaw).mock.calls[0] as [Prisma.Sql];
+      return sql;
+    };
+
+    it('returns the nodes, links and truncated flag computed by the database', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([graphRow]);
+      await expect(service.getKnowledgeGraph('user')).resolves.toEqual(
+        graphRow,
+      );
+    });
+
+    it('is an empty, untruncated graph when the query returns no row', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([]);
+      await expect(service.getKnowledgeGraph('user')).resolves.toEqual({
+        nodes: [],
+        links: [],
+        truncated: false,
+      });
+    });
+
+    it('filters access and edges in SQL with bound parameters, never a JS id list', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([graphRow]);
+      await service.getKnowledgeGraph('user-42');
+
+      const { sql, values } = sqlOf();
+      // access filter = accessibleDocumentsSql: archived, admin, space member, document member
+      expect(sql).toContain('"isArchived" = false');
+      expect(sql).toContain('"SpaceMember"');
+      expect(sql).toContain('"DocumentMember"');
+      // both link ends must be kept nodes
+      expect(sql).toMatch(/JOIN kept ks ON ks\."id" = l\."sourceDocId"/);
+      expect(sql).toMatch(/JOIN kept kt ON kt\."id" = l\."targetDocId"/);
+      expect(sql).not.toMatch(/\bIN\s*\(/i);
+      expect(sql).not.toContain('user-42'); // parameterized, not interpolated
+      expect(values).toContain('user-42');
+      expect(m(prisma.document.findMany)).not.toHaveBeenCalled();
+      expect(m(prisma.documentLink.findMany)).not.toHaveBeenCalled();
+    });
+
+    it('defaults to 2000 nodes and probes one more row to detect truncation', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([graphRow]);
+      await service.getKnowledgeGraph('user');
+      const { values } = sqlOf();
+      expect(values).toEqual(expect.arrayContaining([2001, 2000]));
+    });
+
+    it('passes the requested limit and reports truncation', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([{ ...graphRow, truncated: true }]);
+      const graph = await service.getKnowledgeGraph('user', 10);
+      expect(graph.truncated).toBe(true);
+      expect(sqlOf().values).toEqual(expect.arrayContaining([11, 10]));
+    });
+
+    it.each([
+      [0, 1],
+      [-5, 1],
+      [999_999, 5000],
+    ])('clamps limit %p to %p', async (given, used) => {
+      m(prisma.$queryRaw).mockResolvedValue([graphRow]);
+      await service.getKnowledgeGraph('user', given);
+      expect(sqlOf().values).toEqual(expect.arrayContaining([used + 1, used]));
+    });
+  });
+
+  describe('restoreDocument', () => {
+    const archivedAt = new Date('2026-01-01T10:00:00.000Z');
+    const row = (over: Record<string, unknown> = {}) => ({
+      id: 'doc',
+      isArchived: true,
+      archivedAt,
+      members: [],
+      space: { isArchived: false, members: [{ role: 'OWNER' }] },
+      ...over,
+    });
+    const restored = { isArchived: false, archivedAt: null };
+
+    beforeEach(() => {
+      m(prisma.user.findUnique).mockResolvedValue({ isSystemAdmin: false });
+      m(prisma.document.updateMany).mockResolvedValue({ count: 0 });
+    });
+
+    it('restores the document and only the descendants archived at the same moment', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(row());
+      m(prisma.document.findMany)
+        .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }])
+        .mockResolvedValueOnce([{ id: 'g1' }])
+        .mockResolvedValueOnce([]);
+
+      await expect(service.restoreDocument('doc', 'user')).resolves.toEqual({
+        restored: 4,
+      });
+
+      expect(prisma.document.update).toHaveBeenCalledWith({
+        where: { id: 'doc' },
+        data: restored,
+      });
+      expect(prisma.document.findMany).toHaveBeenNthCalledWith(1, {
+        where: { parentId: { in: ['doc'] }, isArchived: true, archivedAt },
+        select: { id: true },
+      });
+      expect(prisma.document.findMany).toHaveBeenNthCalledWith(2, {
+        where: { parentId: { in: ['c1', 'c2'] }, isArchived: true, archivedAt },
+        select: { id: true },
+      });
+      expect(prisma.document.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['c1', 'c2'] } },
+        data: restored,
+      });
+    });
+
+    it('returns 1 when nothing was archived with it', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(row());
+      m(prisma.document.findMany).mockResolvedValue([]);
+      await expect(service.restoreDocument('doc', 'user')).resolves.toEqual({
+        restored: 1,
+      });
+      expect(prisma.document.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('without an archive timestamp restores just the document', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(
+        row({ archivedAt: null }),
+      );
+      await expect(service.restoreDocument('doc', 'user')).resolves.toEqual({
+        restored: 1,
+      });
+      expect(prisma.document.findMany).not.toHaveBeenCalled();
+    });
+
+    it('409 when the document is not archived, without writing', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(
+        row({ isArchived: false, archivedAt: null }),
+      );
+      await expect(service.restoreDocument('doc', 'user')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.document.update).not.toHaveBeenCalled();
+    });
+
+    it('409 when its space is archived (restore the space first)', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(
+        row({ space: { isArchived: true, members: [{ role: 'OWNER' }] } }),
+      );
+      await expect(service.restoreDocument('doc', 'user')).rejects.toThrow(
+        /restore the space first/,
+      );
+      expect(prisma.document.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('publishDocument', () => {
