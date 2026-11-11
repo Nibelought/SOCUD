@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Logger,
   NotFoundException,
@@ -121,6 +122,92 @@ describe('DocumentService', () => {
         isArchived: false,
         space: { name: 'Space' },
       });
+    });
+  });
+
+  describe('restoreDocument', () => {
+    const archivedAt = new Date('2026-01-01T10:00:00.000Z');
+    const row = (over: Record<string, unknown> = {}) => ({
+      id: 'doc',
+      isArchived: true,
+      archivedAt,
+      members: [],
+      space: { isArchived: false, members: [{ role: 'OWNER' }] },
+      ...over,
+    });
+    const restored = { isArchived: false, archivedAt: null };
+
+    beforeEach(() => {
+      m(prisma.user.findUnique).mockResolvedValue({ isSystemAdmin: false });
+      m(prisma.document.updateMany).mockResolvedValue({ count: 0 });
+    });
+
+    it('restores the document and only the descendants archived at the same moment', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(row());
+      m(prisma.document.findMany)
+        .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }])
+        .mockResolvedValueOnce([{ id: 'g1' }])
+        .mockResolvedValueOnce([]);
+
+      await expect(service.restoreDocument('doc', 'user')).resolves.toEqual({
+        restored: 4,
+      });
+
+      expect(prisma.document.update).toHaveBeenCalledWith({
+        where: { id: 'doc' },
+        data: restored,
+      });
+      expect(prisma.document.findMany).toHaveBeenNthCalledWith(1, {
+        where: { parentId: { in: ['doc'] }, isArchived: true, archivedAt },
+        select: { id: true },
+      });
+      expect(prisma.document.findMany).toHaveBeenNthCalledWith(2, {
+        where: { parentId: { in: ['c1', 'c2'] }, isArchived: true, archivedAt },
+        select: { id: true },
+      });
+      expect(prisma.document.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['c1', 'c2'] } },
+        data: restored,
+      });
+    });
+
+    it('returns 1 when nothing was archived with it', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(row());
+      m(prisma.document.findMany).mockResolvedValue([]);
+      await expect(service.restoreDocument('doc', 'user')).resolves.toEqual({
+        restored: 1,
+      });
+      expect(prisma.document.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('without an archive timestamp restores just the document', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(
+        row({ archivedAt: null }),
+      );
+      await expect(service.restoreDocument('doc', 'user')).resolves.toEqual({
+        restored: 1,
+      });
+      expect(prisma.document.findMany).not.toHaveBeenCalled();
+    });
+
+    it('409 when the document is not archived, without writing', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(
+        row({ isArchived: false, archivedAt: null }),
+      );
+      await expect(service.restoreDocument('doc', 'user')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.document.update).not.toHaveBeenCalled();
+    });
+
+    it('409 when its space is archived (restore the space first)', async () => {
+      m(prisma.document.findUnique).mockResolvedValue(
+        row({ space: { isArchived: true, members: [{ role: 'OWNER' }] } }),
+      );
+      await expect(service.restoreDocument('doc', 'user')).rejects.toThrow(
+        /restore the space first/,
+      );
+      expect(prisma.document.update).not.toHaveBeenCalled();
     });
   });
 

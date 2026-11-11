@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   Patch,
+  HttpCode,
+  HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import {
@@ -27,7 +29,10 @@ import { CurrentUser } from '../auth/current-user';
 import { RoleGuard } from '../permission/role.guard';
 import { RequireRole } from '../permission/require-role.decorator';
 import { Role } from '@prisma/client';
-import { SuccessResponseDto } from '../common/dto/common.dto';
+import {
+  RestoreResponseDto,
+  SuccessResponseDto,
+} from '../common/dto/common.dto';
 import { ApiErrors } from '../openapi/api-errors';
 import { BEARER_SCHEME } from '../openapi/swagger';
 import {
@@ -200,5 +205,30 @@ export class SpaceController {
     @CurrentUser('id') userId: string,
   ) {
     return this.spaceService.archiveSpace(id, userId);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @RequireRole(Role.OWNER, {
+    resource: 'space',
+    message: 'Only space OWNERs can restore this space',
+  })
+  @ApiOperation({
+    summary: 'Restore a space from the trash (OWNER)',
+    description:
+      'Restores the documents archived together with the space. 409 when the space is not archived.',
+  })
+  @ApiOkResponse({ type: RestoreResponseDto })
+  @ApiErrors({
+    badRequest: true,
+    forbidden: true,
+    notFound: true,
+    conflict: true,
+  })
+  async restoreSpace(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.spaceService.restoreSpace(id, userId);
   }
 }

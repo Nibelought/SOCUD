@@ -7,6 +7,8 @@ import {
   Param,
   Delete,
   Put,
+  HttpCode,
+  HttpStatus,
   UseGuards,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -33,7 +35,10 @@ import { RoleGuard } from '../permission/role.guard';
 import { RequireRole } from '../permission/require-role.decorator';
 import { Role } from '@prisma/client';
 import { SearchService } from '../search/search.service';
-import { SuccessResponseDto } from '../common/dto/common.dto';
+import {
+  RestoreResponseDto,
+  SuccessResponseDto,
+} from '../common/dto/common.dto';
 import { ApiErrors } from '../openapi/api-errors';
 import { BEARER_SCHEME } from '../openapi/swagger';
 import {
@@ -192,6 +197,32 @@ export class DocumentController {
     @CurrentUser('id') userId: string,
   ) {
     return this.documentService.update(id, userId, dto);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @RequireRole(Role.OWNER, {
+    resource: 'document',
+    includeArchived: true,
+    message: 'Only OWNERs can restore this document',
+  })
+  @ApiOperation({
+    summary: 'Restore a document from the trash (OWNER)',
+    description:
+      'Also restores descendants archived at the same moment. 409 when the document is not archived or its space is archived (restore the space first).',
+  })
+  @ApiOkResponse({ type: RestoreResponseDto })
+  @ApiErrors({
+    badRequest: true,
+    forbidden: true,
+    notFound: true,
+    conflict: true,
+  })
+  async restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.documentService.restoreDocument(id, userId);
   }
 
   @Delete(':id')

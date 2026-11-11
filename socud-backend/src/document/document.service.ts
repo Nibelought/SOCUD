@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
+  ConflictException,
   Logger,
   Optional,
 } from '@nestjs/common';
@@ -403,28 +404,59 @@ export class DocumentService {
     };
   }
 
-  async restoreDocument(documentId: string, userId: string) {
-    // 1. Прямая проверка прав: assertDocumentRole скрывает архивные документы,
-    // поэтому используется assertDocumentOwner (аналогично методу remove)
-    await this.permissions.assertDocumentOwner(
+  /**
+   * Takes a document out of the trash (OWNERs and admins only; `assertDocumentOwner` also sees
+   * archived rows). Descendants restore with it only when they were archived at the very same
+   * moment (equal `archivedAt`), so documents the user archived separately stay in the trash.
+   * Returns how many documents were restored.
+   *
+   * 409 when the document is not archived, or when its space is: a document restored inside an
+   * archived space would show up in recent/graph/search while its space is hidden, so the
+   * space has to be restored first.
+   */
+  async restoreDocument(
+    documentId: string,
+    userId: string,
+  ): Promise<{ restored: number }> {
+    // assertDocumentRole hides archived documents, hence the OWNER check that does not (as remove).
+    const doc = await this.permissions.assertDocumentOwner(
       userId,
       documentId,
       'Only OWNERs can restore this document',
     );
+    if (!doc.isArchived) {
+      throw new ConflictException('Document is not archived');
+    }
+    if (doc.space.isArchived) {
+      throw new ConflictException(
+        'The space of this document is archived; restore the space first',
+      );
+    }
 
-    // 2. Восстанавливаем сам документ
-    await this.prisma.document.update({
-      where: { id: documentId },
-      data: { isArchived: false, archivedAt: null },
+    const archivedAt = doc.archivedAt;
+    const restore = { isArchived: false, archivedAt: null };
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.document.update({ where: { id: documentId }, data: restore });
+      let restored = 1;
+
+      // Walk down the hierarchy level by level; restored rows no longer match, so it terminates.
+      let level = [documentId];
+      while (archivedAt && level.length > 0) {
+        const children = await tx.document.findMany({
+          where: { parentId: { in: level }, isArchived: true, archivedAt },
+          select: { id: true },
+        });
+        if (children.length === 0) break;
+        level = children.map((child) => child.id);
+        await tx.document.updateMany({
+          where: { id: { in: level } },
+          data: restore,
+        });
+        restored += level.length;
+      }
+      return { restored };
     });
-
-    // 3. Каскадное восстановление прямых дочерних документов (по иерархии)
-    await this.prisma.document.updateMany({
-      where: { parentId: documentId }, // ← Исправлено: parentId вместо documentId
-      data: { isArchived: false, archivedAt: null },
-    });
-
-    return { success: true };
   }
 
   async getMembersWithInheritance(documentId: string, userId: string) {

@@ -170,6 +170,8 @@ describe('Document authorization matrix', () => {
     /** Mutation that must run when allowed; null for read-only endpoints. */
     write: (() => jest.Mock) | null;
     allowed: Row;
+    /** The document must be in the trash for the call to succeed (restore). */
+    archived?: boolean;
   }
 
   const endpoints = (): Endpoint[] => [
@@ -230,6 +232,7 @@ describe('Document authorization matrix', () => {
       call: () => service.restoreDocument(DOC, ACTOR),
       write: () => m(prisma.document.update),
       allowed: OWNER_ONLY,
+      archived: true,
     },
   ];
 
@@ -250,7 +253,7 @@ describe('Document authorization matrix', () => {
     (_label, scenario, column) => {
       it.each(names)('%s', async (name) => {
         const endpoint = endpoints().find((e) => e.name === name)!;
-        arrange(scenario);
+        arrange(scenario, { archived: endpoint.archived });
 
         if (endpoint.allowed[column]) {
           await expect(endpoint.call()).resolves.toBeDefined();

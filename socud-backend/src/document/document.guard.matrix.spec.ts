@@ -91,6 +91,7 @@ const SERVICE_STUB = {
   listVersions: [],
   getVersion: {},
   publishDocument: { success: true },
+  restoreDocument: { restored: 1 },
   create: { id: DOC },
 };
 
@@ -186,6 +187,14 @@ const ROUTES: Route[] = [
     ok: 200,
     allowed: OWNER,
     handler: 'remove',
+  },
+  {
+    name: 'POST /document/:id/restore',
+    method: 'post',
+    path: `/document/${DOC}/restore`,
+    ok: 200,
+    allowed: OWNER,
+    handler: 'restoreDocument',
   },
   {
     // The space id comes from the body; the space role EDITOR is required.
@@ -348,7 +357,10 @@ describe('DocumentController authorization (RoleGuard, HTTP level)', () => {
 
   describe('archived documents (the trash)', () => {
     const live = ROUTES.filter(
-      (r) => r.name !== 'DELETE /document/:id' && !r.name.includes('(space'),
+      (r) =>
+        r.name !== 'DELETE /document/:id' &&
+        r.name !== 'POST /document/:id/restore' &&
+        !r.name.includes('(space'),
     );
 
     it.each(live.map((r) => [r.name, r] as const))(
@@ -363,16 +375,22 @@ describe('DocumentController authorization (RoleGuard, HTTP level)', () => {
       },
     );
 
-    it('DELETE /document/:id: OWNERs (and admins) may hard-delete from the trash, others get 403', async () => {
-      const del = ROUTES.find((r) => r.name === 'DELETE /document/:id')!;
-      for (const [column, scenario] of SCENARIOS.entries()) {
-        service.remove.mockClear();
-        arrange(scenario, { archived: true });
-        const res = await send(del);
-        expect(res.status).toBe(OWNER[column] ? 200 : 403);
-        expect(service.remove).toHaveBeenCalledTimes(OWNER[column] ? 1 : 0);
-      }
-    });
+    it.each([
+      ['DELETE /document/:id', 'remove'],
+      ['POST /document/:id/restore', 'restoreDocument'],
+    ])(
+      '%s: OWNERs (and admins) reach the trash, others get 403',
+      async (name, handler) => {
+        const route = ROUTES.find((r) => r.name === name)!;
+        for (const [column, scenario] of SCENARIOS.entries()) {
+          service[handler].mockClear();
+          arrange(scenario, { archived: true });
+          const res = await send(route);
+          expect(res.status).toBe(OWNER[column] ? 200 : 403);
+          expect(service[handler]).toHaveBeenCalledTimes(OWNER[column] ? 1 : 0);
+        }
+      },
+    );
   });
 
   describe('failure modes before the service', () => {

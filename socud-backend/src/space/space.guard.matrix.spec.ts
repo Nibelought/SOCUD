@@ -39,6 +39,7 @@ const SERVICE_STUB = {
   upsertMember: {},
   removeMember: { success: true },
   archiveSpace: { id: SPACE },
+  restoreSpace: { restored: 2 },
 };
 
 interface Route {
@@ -105,6 +106,14 @@ const ROUTES: Route[] = [
     ok: 201,
     allowed: OWNERS,
     handler: 'archiveSpace',
+  },
+  {
+    name: 'POST /space/:id/restore',
+    method: 'post',
+    path: `/space/${SPACE}/restore`,
+    ok: 200,
+    allowed: OWNERS,
+    handler: 'restoreSpace',
   },
   {
     name: 'DELETE /space/:id',
@@ -210,7 +219,8 @@ describe('SpaceController authorization (RoleGuard, HTTP level)', () => {
       [ROUTES[2], 'Only OWNERs and EDITORs can update space details'],
       [ROUTES[3], 'Only space OWNERs can manage members'],
       [ROUTES[5], 'Only space OWNERs can delete or archive this space'],
-      [ROUTES[6], 'Only space OWNERs can hard delete this space'],
+      [ROUTES[6], 'Only space OWNERs can restore this space'],
+      [ROUTES[7], 'Only space OWNERs can hard delete this space'],
     ];
     for (const [route, message] of expected) {
       const res = await send(route);
