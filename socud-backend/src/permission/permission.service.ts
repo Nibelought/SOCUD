@@ -5,6 +5,12 @@ import {
 } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  recalledDocument,
+  recalledSystemAdmin,
+  rememberDocument,
+  rememberSystemAdmin,
+} from './request-memo';
 
 /**
  * Role ordering: a higher rank includes every right of the lower ones.
@@ -65,12 +71,22 @@ interface DocumentRoleResolution {
 export class PermissionService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Always backed by the `User` row. During an HTTP request the flag `JwtStrategy` already read
+   * for that request is reused (see `request-memo.ts`), so there is no second read and no
+   * staleness; Hocuspocus, the queue and scripts have no request and read the row.
+   */
   async isSystemAdmin(userId: string): Promise<boolean> {
+    const known = recalledSystemAdmin(userId);
+    if (known !== undefined) return known;
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { isSystemAdmin: true },
     });
-    return user?.isSystemAdmin === true;
+    const isAdmin = user?.isSystemAdmin === true;
+    rememberSystemAdmin(userId, isAdmin);
+    return isAdmin;
   }
 
   // ---------------------------------------------------------------------
@@ -198,13 +214,17 @@ export class PermissionService {
     documentId: string,
     options: { includeArchived?: boolean } = {},
   ): Promise<DocumentWithAccess> {
-    const doc = await this.prisma.document.findUnique({
-      where: { id: documentId },
-      include: {
-        members: { where: { userId } },
-        space: { include: { members: { where: { userId } } } },
-      },
-    });
+    // The RoleGuard and the service's own check load the same row within one request.
+    const doc =
+      recalledDocument(userId, documentId) ??
+      (await this.prisma.document.findUnique({
+        where: { id: documentId },
+        include: {
+          members: { where: { userId } },
+          space: { include: { members: { where: { userId } } } },
+        },
+      }));
+    if (doc) rememberDocument(userId, documentId, doc);
 
     // The trash is invisible to everybody (see class comment).
     if (!doc || (doc.isArchived && !options.includeArchived)) {

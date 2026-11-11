@@ -9,6 +9,7 @@ import { parseCorsOrigins } from './config/env.validation';
 import { Logger } from 'nestjs-pino';
 import { SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { isSwaggerEnabled, setupSwagger } from './openapi/swagger';
+import { requestMemoMiddleware } from './permission/request-memo';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -22,6 +23,8 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
+  // Per-request memo for access checks (see permission/request-memo.ts); must precede the routes.
+  app.use(requestMemoMiddleware);
 
   // Активация строгой валидации
   app.useGlobalPipes(
