@@ -436,8 +436,8 @@ do_install() {
     (cd "$ROOT/socud-frontend" && npm ci) || die "frontend install failed"
   fi
   if [ "$WITH_WORKER" = 1 ] && [ ! -x "$ROOT/socud-ai-worker/.venv/bin/python" ]; then
-    say "Creating the AI worker virtualenv (pip install -r requirements.txt)..."
-    (cd "$ROOT/socud-ai-worker" && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt) \
+    say "Creating the AI worker virtualenv (pip install -c constraints.txt -r requirements.txt)..."
+    (cd "$ROOT/socud-ai-worker" && python3 -m venv .venv && .venv/bin/pip install -c constraints.txt -r requirements.txt) \
       || die "AI worker install failed"
   fi
 
@@ -484,7 +484,7 @@ preflight() {
   fi
   if [ "$scope" = apps ] && [ "$WITH_WORKER" = 1 ] && [ ! -x "$ROOT/socud-ai-worker/.venv/bin/python" ]; then
     missing="$missing
-  - AI worker virtualenv:         python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   (in socud-ai-worker)
+  - AI worker virtualenv:         python3 -m venv .venv && .venv/bin/pip install -c constraints.txt -r requirements.txt   (in socud-ai-worker)
                                   (or start with --no-worker)"
   fi
   if [ -n "$missing" ]; then

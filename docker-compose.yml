@@ -1,9 +1,12 @@
 # Two ways to use this file (see README):
 #   Local development:  docker compose up -d db            (backend/frontend/worker run natively)
 #   Full stack:         docker compose --profile app up -d --build
-# The AI worker is NOT a service here (and is not needed at all with EMBEDDING_PROVIDER=api): it needs Apple's MLX/Metal and runs natively on the host.
-# Containers reach it at http://host.docker.internal:8000 (see AI_WORKER_URL), or a worker on another machine
-# (e.g. a PC with an NVIDIA GPU) at its LAN address: set AI_WORKER_URL and AI_WORKER_TOKEN in .env.
+# The default AI worker is NOT part of the `app` profile (and is not needed at all with EMBEDDING_PROVIDER=api): it needs
+# Apple's MLX/Metal and runs natively on the host. Containers reach it at http://host.docker.internal:8000 (see
+# AI_WORKER_URL), or a worker on another machine (e.g. a PC with an NVIDIA GPU) at its LAN address: set AI_WORKER_URL
+# and AI_WORKER_TOKEN in .env.
+# Opt-in: `--profile worker` adds the `ai-worker` service, the PyTorch worker in a Linux container (CPU by default,
+# CUDA with a build arg). MLX stays native on the Mac. See README "AI worker in Docker (Linux, torch)".
 #
 # Embedding profiles: EMBEDDING_PROFILE=<name> in .env (or in the shell: EMBEDDING_PROFILE=api docker compose ...)
 # selects the <NAME>__<VAR> settings (API__EMBEDDING_API_KEY, PC__AI_WORKER_URL, ...) instead of the plain ones.
@@ -16,6 +19,8 @@
 # Networks:
 #   internal  no external access (internal: true): db, redis, backend, migrate talk here.
 #   edge      the backend (and the frontend) publish their ports through this one.
+#   egress    only the ai-worker (profile `worker`) joins it: `internal` has no outbound access, but the worker has to
+#             download its model from Hugging Face once. It publishes nothing and is reachable only with its token.
 #   dbhost    only exists so the database's loopback port can be published for native development.
 
 x-node-version: &node-version ${NODE_VERSION:-22}
@@ -169,12 +174,47 @@ services:
         condition: service_healthy
     networks: [edge]
 
+  # Opt-in (`--profile worker`): the PyTorch embedding worker as a Linux container; CPU wheels unless built with
+  # AI_WORKER_TORCH_VARIANT=cu132 (then also reserve a GPU, see README). Not for macOS hosts: use the native MLX worker there.
+  # No host port: the backend reaches it at http://ai-worker:8000 over `internal`. To use it, select a profile that
+  # sets AI_WORKER_URL=http://ai-worker:8000 (the `container` block of .env.example, EMBEDDING_PROFILE=container).
+  ai-worker:
+    profiles: [worker]
+    build:
+      context: ./socud-ai-worker
+      args:
+        TORCH_VARIANT: ${AI_WORKER_TORCH_VARIANT:-cpu}
+    restart: unless-stopped
+    environment:
+      # The container listens on 0.0.0.0, so the worker refuses to start without a token; it is the same value the
+      # backend sends as AI_WORKER_TOKEN. Empty here = the worker exits with a message asking for one
+      # (a `:?` required-variable check would also break every command without the profile).
+      WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
+      DEVICE: ${AI_WORKER_DEVICE:-auto}
+      # Empty = the default of the torch backend (Qwen/Qwen3-Embedding-4B, ~8 GB, downloaded on first start).
+      MODEL_NAME: ${AI_WORKER_MODEL_NAME:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+      # Set to 1 once the model is in the volume to forbid any network access.
+      HF_HUB_OFFLINE: ${AI_WORKER_HF_OFFLINE:-0}
+    volumes:
+      - hfcache:/data/hf
+    networks: [internal, egress]
+    healthcheck:
+      # 200 only when the model is loaded; the first start downloads ~8 GB, hence the long start period.
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15m
+
 networks:
   internal:
     internal: true
   edge: {}
   dbhost: {}
+  egress: {}
 
 volumes:
   pgdata:
   redisdata:
+  hfcache:
