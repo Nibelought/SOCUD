@@ -75,6 +75,11 @@ function formatDuration(seconds: number): string {
   return `${Math.round(seconds / 60)} min`;
 }
 
+/** An environment value as a trimmed string ('' when unset or not a string). */
+function asTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 async function checkWorker(): Promise<void> {
   // The same resolution the app's ConfigModule does: the active EMBEDDING_PROFILE wins.
   let env: Record<string, unknown>;
@@ -85,9 +90,7 @@ async function checkWorker(): Promise<void> {
     throw new DemoSeedError(err instanceof Error ? err.message : String(err));
   }
   const via = profile ? ` (embedding profile ${profile})` : '';
-  const provider = String(env.EMBEDDING_PROVIDER ?? '')
-    .trim()
-    .toLowerCase();
+  const provider = asTrimmedString(env.EMBEDDING_PROVIDER).toLowerCase();
   if (provider === 'api') {
     // No worker involved; the embedding client validates the key/model when the app starts.
     console.log(
@@ -95,7 +98,7 @@ async function checkWorker(): Promise<void> {
     );
     return;
   }
-  const workerUrl = String(env.AI_WORKER_URL ?? '').trim();
+  const workerUrl = asTrimmedString(env.AI_WORKER_URL);
   const base = workerUrl === '' ? 'http://127.0.0.1:8000' : workerUrl;
   const url = `${base.replace(/\/+$/, '')}/health`;
   try {

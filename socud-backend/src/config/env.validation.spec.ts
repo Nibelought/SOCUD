@@ -383,7 +383,7 @@ describe('validateEnv EMBEDDING_PROFILE', () => {
 
   it('reports an unknown profile with the profiles found', () => {
     expect(() => validateEnv({ ...all, EMBEDDING_PROFILE: 'nas' })).toThrow(
-      /Invalid environment configuration:\n  - EMBEDDING_PROFILE="nas" has no NAS__\* variables \(profiles with variables: api, local, pc\)/,
+      /Invalid environment configuration:\n {2}- EMBEDDING_PROFILE="nas" has no NAS__\* variables \(profiles with variables: api, local, pc\)/,
     );
   });
 
