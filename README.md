@@ -12,12 +12,14 @@ SOCUD is a collaborative knowledge base and a Confluence alternative. Teams orga
 | `socud-ai-worker` | FastAPI, Qwen3-Embedding-4B (1024-dim): MLX natively on Apple Silicon, or PyTorch/CUDA on another machine (e.g. an RTX 4070 PC) | 8000 |
 | PostgreSQL (`docker-compose.yml`) | PostgreSQL 18 + pgvector | 5432 |
 
+The AI worker is optional: with `EMBEDDING_PROVIDER=api` the backend gets its vectors from a hosted OpenAI-compatible API such as OpenRouter and the worker is not needed (see "Using a hosted embedding API (OpenRouter)").
+
 REST and WebSocket (Hocuspocus) run in the same NestJS process.
 
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`; `nvm use` picks it up). The backend needs Node >= 20.19, the frontend >= 20.9.
-- Python 3.12 or newer (the AI worker is developed on 3.14) on an Apple Silicon Mac (MLX), or on any machine with an NVIDIA GPU (PyTorch/CUDA, see "Running the worker on another machine"). The worker does not run in Docker on a Mac.
+- Python 3.12 or newer, unless you use a hosted embedding API instead of the worker (the AI worker is developed on 3.14) on an Apple Silicon Mac (MLX), or on any machine with an NVIDIA GPU (PyTorch/CUDA, see "Running the worker on another machine"). The worker does not run in Docker on a Mac.
 - Docker (for PostgreSQL with pgvector)
 
 ## Quick start
@@ -68,7 +70,7 @@ Data commands (`start` flags, or the commands of the same name):
 | `--admin`, `./dev.sh admin` | Creates or promotes the admin from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`, read from `socud-backend/.env` or the environment (not the root `.env`). Skipped with a warning when unset. |
 | `--migrate`, `./dev.sh migrate` | Applies the migrations. Seeding and `--admin` apply them automatically. |
 | `--db-only` | Only PostgreSQL and Redis (the data flags above still apply). |
-| `--no-worker`, `--no-frontend` | Do not start the AI worker / the frontend. |
+| `--no-worker`, `--no-frontend` | Do not start the AI worker / the frontend. The worker is also skipped automatically when `AI_WORKER_URL` points to another machine or when `EMBEDDING_PROVIDER=api` (read from the environment, then `socud-backend/.env`). |
 | `--install` | Installs what is missing (`npm ci`, `prisma generate`, the worker virtualenv) and copies each `.env.example` to its `.env` only when that file does not exist. |
 
 ```bash
@@ -159,6 +161,7 @@ Each service ships an example file: `.env.example` (root, for Docker Compose), `
 | `JWT_SECRET` | `--profile app` | none | Backend access token secret (32+ characters) |
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | seed only | none | First admin, see "First admin" |
 | `AI_WORKER_URL`, `AI_WORKER_TOKEN`, `LOG_LEVEL`, `SENTRY_DSN`, `CORS_ORIGIN` | no | see `.env.example` | Passed through to the backend container |
+| `EMBEDDING_PROVIDER`, `EMBEDDING_API_*`, `EMBEDDING_MODEL_ID`, `EMBED_BATCH_SIZE`, `EMBED_CONCURRENCY` | no | see `.env.example` | Hosted embedding API instead of the worker; passed through to the backend container (see "Using a hosted embedding API") |
 | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` | no | `http://localhost:3000`, `ws://127.0.0.1:3002` | Frontend build args (browser-facing URLs) |
 | `*_HOST_PORT`, `POSTGRES_CONTAINER_NAME`, `NODE_VERSION` | no | see `.env.example` | Port / name / Node overrides |
 
@@ -172,6 +175,19 @@ Each service ships an example file: `.env.example` (root, for Docker Compose), `
 | `WS_PORT` | no | `3002` | Hocuspocus WebSocket port |
 | `AI_WORKER_URL` | no | `http://127.0.0.1:8000` | Base URL of the AI worker; may point to another machine (see "Running the worker on another machine") |
 | `AI_WORKER_TOKEN` | no | none | Sent to the worker as `X-Worker-Token`; must equal the worker's `WORKER_TOKEN` |
+| `EMBEDDING_PROVIDER` | no | `worker` | `worker` (the AI worker) or `api` (a hosted OpenAI-compatible embeddings API; no worker needed). See "Using a hosted embedding API (OpenRouter)" |
+| `EMBEDDING_API_URL` | no | `https://openrouter.ai/api/v1` | `api` only. Base URL, `/embeddings` is appended. Must be `https://` unless the host is loopback or private (plain `http://` to a private host starts with a warning, to a public host is refused) |
+| `EMBEDDING_API_KEY` | with `api` | none | Bearer key. Never logged |
+| `EMBEDDING_API_MODEL` | with `api` | none | Model id sent in the request, e.g. `qwen/qwen3-embedding-4b` |
+| `EMBEDDING_API_DIMENSIONS` | no | none | `api` only. Sent as `dimensions` (models that support it); must be >= `EMBEDDING_DIM` |
+| `EMBEDDING_API_BATCH_SIZE` | no | `32` | `api` only. Maximum inputs per HTTP request; caps `EMBED_BATCH_SIZE` |
+| `EMBEDDING_API_QUERY_INSTRUCTION` | no | worker's default text for `qwen3-embedding` models, none otherwise | `api` only. Task text of the `Instruct: ...\nQuery:` prefix added to search queries; `off` disables it |
+| `EMBEDDING_API_REFERER`, `EMBEDDING_API_TITLE` | no | none | `api` only. OpenRouter attribution headers (`HTTP-Referer`, `X-Title`) |
+| `EMBEDDING_MODEL_ID` | no | `qwen3-embedding-4b@<dim>` (worker), `<EMBEDDING_API_MODEL>@<dim>` lower-cased (api) | Name of the vector space this installation produces. Set it only to declare that a hosted model is the same space as the local one |
+| `EMBEDDING_DIM` | no | `1024` | Vector size; must match the `vector(1024)` column. Longer API vectors are cut to it (Matryoshka models only) |
+| `EMBED_BATCH_SIZE` | no | `1` (worker, max 32), `16` (api) | Texts per embedding request when indexing documents |
+| `EMBED_CONCURRENCY` | no | `1` | Parallel embedding jobs per process (max 16); 2-4 suits an API |
+| `EMBED_TIMEOUT_MS`, `EMBED_QUERY_TIMEOUT_MS` | no | `180000`, `10000` | Time budget of one document / search-query embedding call (includes a `Retry-After` wait for the API) |
 | `ACCESS_RECHECK_MS` | no | `15000` | Minimum interval between access re-checks of an open Hocuspocus connection (positive integer, ms) |
 | `WS_STORE_DEBOUNCE_MS` | no | `2000` | Debounce before Hocuspocus saves a changed document (positive integer, ms) |
 | `CORS_ORIGIN` | no | `http://localhost:3001` | Allowed origin(s); comma-separated list allowed |
@@ -253,6 +269,75 @@ Then `pip install -r requirements.txt` (no model dependencies are used) and `pyt
 Reproduce or re-tune (it loads the GPU, so run it when the PC is idle): `python scripts/stress_test.py --url http://127.0.0.1:8000` tests the worker, `--url http://<pc-ip>:1234/v1 --openai` tests the server directly. It sweeps batch size x parallel requests, recommends the lowest-latency cell within 3% of peak throughput, then measures query latency under that indexing load. Exit code 1 if any request failed.
 
 Verified (2026-11-10) with LM Studio on a Windows/NVIDIA PC over the LAN, model `text-embedding-qwen3-embedding-4b`: `smoke_test.py` passes (1024 dimensions, unit norm, correct Russian/English and cross-language ranking; the Qwen3 README example scores 0.747/0.146/0.048/0.644 against the reference 0.753/0.115/0.032/0.626), at about 7.5 texts/s for single chunks and about 10 texts/s with batches of 8 or more. The M1 MLX worker manages roughly 0.4 texts/s, so the default `EMBED_BATCH_SIZE=1` is already fine here (one chunk takes ~0.13 s) and larger batches add little.
+
+### Using a hosted embedding API (OpenRouter)
+
+Instead of the Python AI worker the backend can vectorize text through any hosted OpenAI-compatible embeddings API (`POST {EMBEDDING_API_URL}/embeddings` with a bearer key). OpenRouter is the default. Nothing else changes: the same queue, the same `vector(1024)` column, the same search. With `EMBEDDING_PROVIDER=worker` (the default) the behaviour is exactly as before.
+
+**Privacy: the text leaves your machine.** Every published document (all spaces, whatever their access rules, because indexing is not per user) and every semantic search query is sent to OpenRouter and from there to the upstream provider that serves the model. Their data-retention and logging policies apply, not yours. Do not use a hosted API for content that must stay inside your organisation; use the local worker, or point `EMBEDDING_API_URL` at a server you run (vLLM, LM Studio, text-embeddings-inference ...; plain `http://` to a private address is accepted with a warning).
+
+**Setup**
+
+1. Create a key at [openrouter.ai/keys](https://openrouter.ai/keys) and add credits.
+2. In `socud-backend/.env` (or the root `.env` for Docker Compose):
+
+   ```ini
+   EMBEDDING_PROVIDER=api
+   EMBEDDING_API_KEY=sk-or-v1-...
+   EMBEDDING_API_MODEL=qwen/qwen3-embedding-4b
+   EMBEDDING_API_DIMENSIONS=1024     # optional: Matryoshka models accept it; if the API answers HTTP 400, remove it (the backend then truncates itself)
+   EMBED_BATCH_SIZE=16               # texts per request when indexing (APIs are fast; 16-32 is sensible)
+   EMBED_CONCURRENCY=2               # documents embedded in parallel
+   ```
+
+3. Start the backend; it logs `Embedding API https://openrouter.ai ready (...)`. The AI worker is not needed: `./dev.sh start` notices `EMBEDDING_PROVIDER=api` and does not start it. A wrong URL, key or lack of credits only produces a warning at startup (like an unreachable worker); publishing keeps working, embedding jobs are retried and search falls back to keyword results meanwhile. Missing `EMBEDDING_API_KEY` / `EMBEDDING_API_MODEL`, a plain-`http://` public URL, or `EMBEDDING_API_DIMENSIONS` below `EMBEDDING_DIM` stop the start with a message naming the variable.
+4. **Re-embed** (see below) if documents were embedded before with another provider or model.
+
+**How the vector is produced.** The backend prepares the text exactly like the worker does (`socud-ai-worker/embedder.py`): light markdown cleaning, and for search queries only the Qwen3 prefix `Instruct: <task>\nQuery:<query>` (on by default for models whose id contains `qwen3-embedding`; `EMBEDDING_API_QUERY_INSTRUCTION` sets another task text or `off`). The port is checked against the real Python code by a committed fixture (`socud-backend/src/queue/fixtures/prepare-text.json`, regenerate with `python scripts/gen_prepare_text_fixtures.py` in `socud-ai-worker`; `embedding-text.spec.ts` compares ~1900 cases byte for byte). A text that is empty after cleaning is sent as `.` because APIs reject empty input. If the API returns more than `EMBEDDING_DIM` numbers, the backend keeps the first `EMBEDDING_DIM` and re-normalises (Matryoshka truncation, with a one-time warning); this is only valid for Matryoshka-trained models (Qwen3-Embedding, OpenAI `text-embedding-3-*`), so for others pick a model with the right size or use `EMBEDDING_API_DIMENSIONS`. Fewer numbers than `EMBEDDING_DIM` is a permanent error (the column cannot be filled).
+
+**Example models** (check each model's page on OpenRouter for current availability and price)
+
+| `EMBEDDING_API_MODEL` | Notes |
+| --- | --- |
+| `qwen/qwen3-embedding-4b` | The hosted twin of the local worker's model (see the next section for the caveats). Supports `dimensions`. |
+| `qwen/qwen3-embedding-8b` | Larger Qwen3 sibling: a different space from the 4B model, so re-embed everything. |
+| `openai/text-embedding-3-small` | Cheap; natively 1536-dim, so set `EMBEDDING_API_DIMENSIONS=1024` (OpenAI supports it; whether OpenRouter forwards it was not checked, and without it the backend truncates the 1536 numbers itself, which is valid for this model). A different space and a different similarity scale: re-embed everything and re-tune `SEARCH_MIN_SIMILARITY` (0.35 was calibrated for Qwen3). |
+
+**Same space as the local worker?** `qwen/qwen3-embedding-4b` is the same base model (Qwen3-Embedding-4B) as the local worker, so if you declare it with `EMBEDDING_MODEL_ID=qwen3-embedding-4b@1024` the stored vectors are labelled as one space. That is a claim you should verify before relying on it, because it holds only if all of this is true:
+
+- The hosted deployment pools the last token and appends the end-of-text token, as Qwen3-Embedding requires (a server that does not produces clearly different vectors).
+- Precision: the local MLX worker runs a 4-bit quantised checkpoint, and OpenRouter serves the model through upstream providers whose precision (bf16, fp8, int8 ...) you do not control and that may change between requests. Expect small drift (cosine around 0.98 to 0.999 between the MLX and CUDA workers is what the repository's tooling anticipates; that figure has not been measured here for the hosted model), not identical vectors.
+- The hosted truncation to 1024 dimensions (`dimensions`) matches the worker's slice-and-renormalise.
+
+Neither the claim nor the numbers above were tested against the real OpenRouter service while writing this (no key was available), so measure it. The existing comparison script can do it with the worker acting as a thin client of the API (the worker applies the same cleaning and truncation as this backend):
+
+```bash
+# terminal 1: your normal local worker on :8000
+# terminal 2: a second worker that forwards to OpenRouter
+cd socud-ai-worker && PORT=8001 BACKEND=openai REMOTE_URL=https://openrouter.ai/api/v1 \
+  REMOTE_API_KEY=sk-or-v1-... MODEL_NAME=qwen/qwen3-embedding-4b python main.py
+# terminal 3
+python scripts/compare_workers.py --a http://127.0.0.1:8000 --b http://127.0.0.1:8001
+```
+
+Per-text cosines of 0.98 or more and identical rankings support setting `EMBEDDING_MODEL_ID=qwen3-embedding-4b@1024` and keeping the existing vectors. Values below about 0.9 mean it is not the same space: leave `EMBEDDING_MODEL_ID` unset (the id then becomes `qwen/qwen3-embedding-4b@1024`) and re-embed. If in doubt, re-embedding is always correct and cheap (below).
+
+**Cost.** OpenRouter bills embedding models per input token; look up the model's price per million tokens on its page. A chunk (up to ~1800 characters) is roughly 400 to 700 tokens, so 1000 chunks are about 0.4 to 0.7 million tokens; every publish embeds only the chunks that changed, every search query embeds one short text, and a full re-embed costs the whole corpus once. There is no spending cap in SOCUD: set a credit limit on the key in OpenRouter, because a loop of large re-embeds spends real money. When credits run out the API answers 402; the jobs fail with a clear log line (`insufficient credits ... Top up`), stop retrying, and the periodic reconcile (`EMBED_RECONCILE_INTERVAL_MS`) picks the documents up again once credits are back.
+
+**Re-embedding after switching provider or model.** Vectors from different models (and, to a lesser degree, different precisions) must not be mixed: the cosine scores between them are meaningless. After a switch that changes the space (or when in doubt) clear the vectors and let the backfill refill them. Semantic search returns nothing until it has finished (keyword search keeps working):
+
+```sql
+UPDATE "DocumentChunk" SET "embedding" = NULL;
+UPDATE "Document" SET "embeddedVersion" = NULL;
+```
+
+then `npm run backfill:embeddings` in `socud-backend` (add `-- --inline` to embed in that process without Redis; otherwise a running backend consumes the jobs, or restarts and reconciles about 10 s after start). A different vector size also needs a migration of the `vector(1024)` column, which this change does not provide: keep `EMBEDDING_DIM=1024` (use `EMBEDDING_API_DIMENSIONS` or Matryoshka truncation to get there).
+
+**Rate limits, retries and errors.** `429`, `5xx`, timeouts and network errors are retried: when the API sends `Retry-After` and the wait fits into the call's time budget (`EMBED_TIMEOUT_MS` for documents, `EMBED_QUERY_TIMEOUT_MS` for search queries; at most two waits of up to 30 s), the backend waits and repeats the request; otherwise the queue retries with its own backoff (5 attempts). Permanent errors are not retried and say what to fix: `400` (not an embedding model, unsupported `dimensions`, text too long), `401` (wrong, revoked or expired key), `402` (out of credits), `403` (no permission, or blocked region/content), `404` (wrong URL or model id). The key and the document texts are never written to logs or error messages (a key echoed back by the provider is masked).
+
+**Recommended settings for an API.** The API serves many requests at once and answers in well under a second, unlike the local worker (`EMBED_BATCH_SIZE=1`, `EMBED_CONCURRENCY=1`): `EMBED_BATCH_SIZE=16` (default for the API; 16 to 32 is reasonable, capped by `EMBEDDING_API_BATCH_SIZE`, default 32) and `EMBED_CONCURRENCY=2` to `4`. Larger values mostly add memory and make a failed request redo more work; lower them if you see rate-limit warnings. The default timeouts (`180000` / `10000` ms) are fine.
+
+**Docker Compose.** `docker-compose.yml` passes the `EMBEDDING_*` variables through to the backend container (the `edge` network allows outbound HTTPS); put them in the root `.env`. The container path was not exercised; the native backend was.
 
 ### Running the worker on another machine (GPU offload)
 

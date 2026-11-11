@@ -17,7 +17,8 @@
 #       --admin               create or promote the admin from SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD
 #                             (read from socud-backend/.env or the environment, not the root .env)
 #       --db-only             only PostgreSQL and Redis; the data steps above still run
-#       --no-worker           do not start the AI worker
+#       --no-worker           do not start the AI worker (it is skipped by itself when AI_WORKER_URL points to another
+#                             machine, or when EMBEDDING_PROVIDER=api: embeddings then come from a hosted API)
 #       --no-frontend         do not start the frontend
 #   ./dev.sh restart [start options]           stop the apps and start them again (databases stay up)
 #   ./dev.sh stop [--keep-db]                  stop the apps and the databases (volumes are kept)
@@ -148,6 +149,16 @@ worker_is_remote() {
   esac
 }
 
+# True when the backend embeds through a hosted API (EMBEDDING_PROVIDER=api): no AI worker is needed.
+# The environment wins over socud-backend/.env, as it does for the backend itself.
+embedding_provider_is_api() {
+  local v
+  v="${EMBEDDING_PROVIDER:-}"
+  [ -n "$v" ] || v="$(env_value EMBEDDING_PROVIDER "$ROOT/socud-backend/.env")"
+  v="$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  [ "$v" = api ]
+}
+
 wait_http() { # url seconds
   local i=0
   while ! curl -fsS -o /dev/null --max-time 2 "$1" 2>/dev/null; do
@@ -215,6 +226,8 @@ check_foreign_listeners() {
   local name p
   for name in backend worker; do
     svc_alive "$name" && continue
+    # With EMBEDDING_PROVIDER=api no worker runs, so whatever holds port 8000 is none of our business.
+    [ "$name" = worker ] && embedding_provider_is_api && continue
     for p in $(svc_port "$name") $(svc_extra_ports "$name"); do
       if port_listening "$p"; then
         die "port $p is held by $(port_owner "$p"), which dev.sh did not start. Stop it first, then retry."
@@ -431,7 +444,7 @@ run_admin() {
 # ---------------------------------------------------------------- start
 
 # --seed-args is split on whitespace. These options must not come through it: they contradict the flags
-# (--reset/--if-missing), and --embed needs a running AI worker, which start has not started yet.
+# (--reset/--if-missing), and --embed needs a running AI worker (or EMBEDDING_PROVIDER=api and the apps up), which start has not started yet.
 check_seed_args() {
   local w
   set -f
@@ -526,6 +539,10 @@ cmd_start() {
   if [ "$DB_ONLY" = 1 ]; then
     WITH_WORKER=0
     START_FRONTEND=0
+  fi
+  if [ "$WITH_WORKER" = 1 ] && embedding_provider_is_api; then
+    say "EMBEDDING_PROVIDER=api: embeddings come from the hosted API, not starting the AI worker."
+    WITH_WORKER=0
   fi
   if [ "$WITH_WORKER" = 1 ] && worker_is_remote; then
     say "AI_WORKER_URL points to another machine, not starting a local worker."
@@ -750,6 +767,8 @@ cmd_status() {
     port="$(svc_port "$name")"
     if svc_alive "$name"; then
       printf '%-9s running   (pgid %s, port %s)\n' "$name" "$(cat "$(pidfile "$name")")" "$port"
+    elif [ "$name" = worker ] && embedding_provider_is_api; then
+      printf '%-9s not needed (EMBEDDING_PROVIDER=api)\n' "$name"
     elif port_listening "$port"; then
       printf '%-9s external  (port %s used by %s, not started by dev.sh)\n' "$name" "$port" "$(port_owner "$port")"
     else

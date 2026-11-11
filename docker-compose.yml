@@ -1,7 +1,7 @@
 # Two ways to use this file (see README):
 #   Local development:  docker compose up -d db            (backend/frontend/worker run natively)
 #   Full stack:         docker compose --profile app up -d --build
-# The AI worker is NOT a service here: it needs Apple's MLX/Metal and runs natively on the host.
+# The AI worker is NOT a service here (and is not needed at all with EMBEDDING_PROVIDER=api): it needs Apple's MLX/Metal and runs natively on the host.
 # Containers reach it at http://host.docker.internal:8000 (see AI_WORKER_URL), or a worker on another machine
 # (e.g. a PC with an NVIDIA GPU) at its LAN address: set AI_WORKER_URL and AI_WORKER_TOKEN in .env.
 #
@@ -90,12 +90,25 @@ services:
       JWT_SECRET: ${JWT_SECRET:-}
       REDIS_URL: redis://redis:6379
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
-      # The AI worker runs natively on the host; see extra_hosts below.
+      # EMBEDDING_PROVIDER=worker (default): the AI worker, which runs natively on the host (see extra_hosts below).
+      # EMBEDDING_PROVIDER=api: a hosted OpenAI-compatible API such as OpenRouter; no worker needed
+      # (README "Using a hosted embedding API"). Empty values below mean "use the default".
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-worker}
+      EMBEDDING_API_URL: ${EMBEDDING_API_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_API_MODEL: ${EMBEDDING_API_MODEL:-}
+      EMBEDDING_API_DIMENSIONS: ${EMBEDDING_API_DIMENSIONS:-}
+      EMBEDDING_API_BATCH_SIZE: ${EMBEDDING_API_BATCH_SIZE:-}
+      EMBEDDING_API_QUERY_INSTRUCTION: ${EMBEDDING_API_QUERY_INSTRUCTION:-}
+      EMBEDDING_API_REFERER: ${EMBEDDING_API_REFERER:-}
+      EMBEDDING_API_TITLE: ${EMBEDDING_API_TITLE:-}
+      EMBEDDING_MODEL_ID: ${EMBEDDING_MODEL_ID:-}
       AI_WORKER_URL: ${AI_WORKER_URL:-http://host.docker.internal:8000}
       AI_WORKER_TOKEN: ${AI_WORKER_TOKEN:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
       # Embedding/search tuning (defaults mirror socud-backend/src/config/env.validation.ts).
-      EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-1}
+      # Empty = provider default (1 for the worker, 16 for the API).
+      EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-}
       EMBED_TIMEOUT_MS: ${EMBED_TIMEOUT_MS:-180000}
       EMBED_QUERY_TIMEOUT_MS: ${EMBED_QUERY_TIMEOUT_MS:-10000}
       EMBED_CONCURRENCY: ${EMBED_CONCURRENCY:-1}
@@ -117,7 +130,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    # `internal` for db/redis; `edge` for the published ports and for reaching the host's AI worker.
+    # `internal` for db/redis; `edge` for the published ports, for reaching the host's AI worker and for outbound calls to a hosted embedding API.
     networks: [internal, edge]
 
   frontend:
