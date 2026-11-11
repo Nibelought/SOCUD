@@ -99,6 +99,31 @@ describe('DocumentService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('findOne', () => {
+    it('returns the view fields including isArchived', async () => {
+      allowPublish();
+      const updatedAt = new Date();
+      m(prisma.document.findUnique).mockResolvedValue({
+        id: 'doc',
+        title: 'T',
+        contentHtml: '<p>x</p>',
+        updatedAt,
+        isArchived: false,
+        members: [],
+        space: { name: 'Space', members: [{ role: 'VIEWER' }] },
+      });
+
+      await expect(service.findOne('doc', 'user')).resolves.toEqual({
+        id: 'doc',
+        title: 'T',
+        contentHtml: '<p>x</p>',
+        updatedAt,
+        isArchived: false,
+        space: { name: 'Space' },
+      });
+    });
+  });
+
   describe('publishDocument', () => {
     const uuid = '3f2b8c1e-8a4d-4f5e-9b1a-2c3d4e5f6a7b';
 
