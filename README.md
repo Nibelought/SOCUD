@@ -19,7 +19,7 @@ REST and WebSocket (Hocuspocus) run in the same NestJS process.
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`; `nvm use` picks it up). The backend needs Node >= 20.19, the frontend >= 20.9.
-- Python 3.12 or newer, unless you use a hosted embedding API instead of the worker (the AI worker is developed on 3.14) on an Apple Silicon Mac (MLX), or on any machine with an NVIDIA GPU (PyTorch/CUDA, see "Running the worker on another machine"). The worker does not run in Docker on a Mac.
+- Python 3.12 or newer, unless you use a hosted embedding API instead of the worker (the AI worker is developed on 3.14) on an Apple Silicon Mac (MLX), or on any machine with an NVIDIA GPU (PyTorch/CUDA, see "Running the worker on another machine"). The MLX worker does not run in Docker (see "AI worker in Docker (Linux, torch)" for the PyTorch container).
 - Docker (for PostgreSQL with pgvector)
 
 ## Quick start
@@ -38,7 +38,7 @@ docker compose up -d
 cd socud-backend && npm run start:dev
 
 # 4. AI worker, natively on the Mac (the ~2.3 GB model downloads on first start; see "AI worker" below)
-cd socud-ai-worker && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && python main.py
+cd socud-ai-worker && python3 -m venv .venv && source .venv/bin/activate && pip install -c constraints.txt -r requirements.txt && python main.py
 
 # 5. Frontend
 cd socud-frontend && cp .env.example .env.local && npm ci && npm run dev
@@ -88,7 +88,7 @@ Prisma refuses `migrate reset` when it runs inside an AI coding agent, so run `r
 
 ## Run everything in Docker
 
-Backend, frontend, PostgreSQL and Redis run as containers. The AI worker does **not**: it needs Apple's MLX (Metal), which is unavailable inside Docker, so it keeps running natively on the Mac (step 4 above) and the backend container reaches it at `http://host.docker.internal:8000`.
+Backend, frontend, PostgreSQL and Redis run as containers. The default AI worker does **not**: it needs Apple's MLX (Metal), which is unavailable inside Docker, so it **stays native on macOS** (step 4 above) and the backend container reaches it at `http://host.docker.internal:8000`. A PyTorch worker image for Linux hosts is available as an opt-in (`--profile worker`, next section).
 
 ```bash
 cp .env.example .env     # set POSTGRES_PASSWORD and JWT_SECRET (openssl rand -hex 32); see the "Full stack" section
@@ -106,6 +106,22 @@ docker compose --profile app up -d --build
 ### AI worker and `host.docker.internal`
 
 Verified with OrbStack: a process on the host bound to `127.0.0.1` **is** reachable from a container (including the backend container, with `extra_hosts: host.docker.internal:host-gateway`, which `docker-compose.yml` sets for Linux compatibility). The worker therefore keeps `HOST=127.0.0.1`. On Docker Desktop for Mac, loopback-bound hosts are also reachable; on a Linux engine `host-gateway` points at the bridge IP and the worker would need `HOST=0.0.0.0` together with `WORKER_TOKEN` and a firewall rule. Set `AI_WORKER_TOKEN` (backend) equal to `WORKER_TOKEN` (worker).
+
+### AI worker in Docker (Linux, torch)
+
+`socud-ai-worker/Dockerfile` builds the PyTorch worker (`BACKEND=torch`) for Linux: `python:3.12-slim`, a non-root user, the pinned dependencies of `constraints.txt`, and CPU wheels from the PyTorch index by default (image about 1.2 GB; PyPI's Linux wheel would add several GB of CUDA libraries). It is for a Linux machine (or a CPU-only test), **not for a Mac: MLX stays native on macOS and remains the default there.** The `ai-worker` service is behind its own `worker` profile, has no published port and is reached by the backend at `http://ai-worker:8000` over the `internal` network. It additionally joins a private `egress` network, because `internal` has no outbound access and the model must be downloaded from Hugging Face once; it needs `AI_WORKER_TOKEN` (the container listens on `0.0.0.0`, and the worker refuses to start on a non-loopback address without a token).
+
+```bash
+# .env: AI_WORKER_TOKEN=<openssl rand -hex 32>   and   EMBEDDING_PROFILE=container   (the block exists in .env.example)
+docker compose --profile app --profile worker up -d --build
+docker compose --profile worker ps          # ai-worker is "healthy" only once the model is loaded
+```
+
+- Why a profile and not only `AI_WORKER_URL`: a selected `EMBEDDING_PROFILE` wins over plain variables, so `AI_WORKER_URL=http://ai-worker:8000` would be ignored while `EMBEDDING_PROFILE=local` is active. The `container` block sets `AI_WORKER_URL` for you; the default (`local` = native MLX via `host.docker.internal`) is unchanged when the profile is not used.
+- The model (`Qwen/Qwen3-Embedding-4B`, about 8 GB) is not in the image; it downloads on first start into the `hfcache` volume (`HF_HOME=/data/hf`), so the first start takes a while and the health check has a 15 minute start period. `/health` returns 503 until the model is loaded. On a CPU a 4B model is slow; it is meant for trying the stack or small corpora. `AI_WORKER_MODEL_NAME`, `AI_WORKER_DEVICE` and `AI_WORKER_HF_OFFLINE=1` (after the first download) are optional.
+- NVIDIA GPU: build with `AI_WORKER_TORCH_VARIANT=cu132` (the pinned torch 2.15.0 exists for `cu132` and `cu134`) and reserve the GPU in a `docker-compose.override.yml` (`services.ai-worker.deploy.resources.reservations.devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]`, NVIDIA container toolkit installed). The CUDA build resolves, but it has not been built or run on a GPU here.
+- The vectors come from the same model as the MLX worker's but from bf16/fp32 weights instead of the 4-bit checkpoint; see "Vectors from different backends" below before switching an existing index.
+- CI builds the CPU image and validates the compose file with the profile; it never downloads the model.
 
 ### First admin
 
@@ -215,12 +231,12 @@ Runtime-only (read by the proxy, not inlined): `SESSION_REDIRECTS=off` disables 
 
 ### AI worker (`socud-ai-worker/.env`, optional)
 
-The worker computes embeddings with Qwen3-Embedding-4B. Two backends share one pipeline (text cleaning, query prefix, last-token pooling, Matryoshka truncation) and the same HTTP API: `mlx-community/Qwen3-Embedding-4B-4bit-DWQ` on [MLX](https://github.com/ml-explore/mlx) (the default on an Apple Silicon Mac), and `Qwen/Qwen3-Embedding-4B` on PyTorch (CUDA, or MPS/CPU), which lets the worker run on another machine. MLX has no Metal access inside Docker, so it is not containerized; containers reach it at `http://host.docker.internal:8000`. This works with the default loopback bind on OrbStack (verified); other Docker runtimes may need `HOST=0.0.0.0` (unverified), in which case also set `WORKER_TOKEN` and keep the port off the network. Embeddings are 1024-dimensional (Matryoshka-truncated, L2-normalised), last-token pooled; queries get the `Instruct: ...\nQuery:` prefix, documents do not.
+The worker computes embeddings with Qwen3-Embedding-4B. Two backends share one pipeline (text cleaning, query prefix, last-token pooling, Matryoshka truncation) and the same HTTP API: `mlx-community/Qwen3-Embedding-4B-4bit-DWQ` on [MLX](https://github.com/ml-explore/mlx) (the default on an Apple Silicon Mac), and `Qwen/Qwen3-Embedding-4B` on PyTorch (CUDA, or MPS/CPU), which lets the worker run on another machine. MLX has no Metal access inside Docker, so it is not containerized and stays native on macOS; containers reach it at `http://host.docker.internal:8000`. The PyTorch backend does run in a Linux container (see "AI worker in Docker (Linux, torch)"). This works with the default loopback bind on OrbStack (verified); other Docker runtimes may need `HOST=0.0.0.0` (unverified), in which case also set `WORKER_TOKEN` and keep the port off the network. Embeddings are 1024-dimensional (Matryoshka-truncated, L2-normalised), last-token pooled; queries get the `Instruct: ...\nQuery:` prefix, documents do not.
 
 ```bash
 cd socud-ai-worker
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -c constraints.txt -r requirements.txt
 python main.py        # http://127.0.0.1:8000
 ```
 
@@ -247,6 +263,10 @@ The first start downloads the model (about 2.3 GB) into `~/.cache/huggingface`. 
 | `PORT` | no | `8000` | Bind port |
 | `WORKER_TOKEN` | no | none | If set, `POST /embed` requires the header `X-Worker-Token: <value>` (`/health` stays open); set the same value as `AI_WORKER_TOKEN` in the backend |
 
+### Updating the Python pins
+
+The `requirements*.txt` files pin the direct dependencies exactly (`==`, platform markers such as the Apple-only `mlx` kept), and `constraints.txt` is a cross-platform lock of everything they pull in (macOS and Linux, Python 3.12 and newer). Install with `pip install -c constraints.txt -r <requirements file>`; the Dockerfile and CI do. To update, bump the `==` pins you want, then in a throwaway environment with [uv](https://docs.astral.sh/uv/) run `uv pip compile requirements.txt requirements-cuda.txt requirements-dev.txt --universal --python-version 3.12 -o constraints.txt` (add `--upgrade` to also refresh transitive versions), and re-run `ruff check . && pytest -q` and `docker build socud-ai-worker`.
+
 ### Offloading to an OpenAI-compatible server (LM Studio, vLLM, Ollama, ...)
 
 If the other computer already serves Qwen3-Embedding-4B through an OpenAI-style API (for example LM Studio with the model `text-embedding-qwen3-embedding-4b`), no software is needed there. The worker on your Mac then acts as a thin adapter: it still does the text cleaning, the query instruction and the Matryoshka truncation to 1024 dimensions (so the vector space is defined in one place), and sends only the model call to the server's `POST /v1/embeddings`. The backend stays unchanged (`AI_WORKER_URL` keeps pointing at the local worker).
@@ -259,7 +279,7 @@ MODEL_NAME=text-embedding-qwen3-embedding-4b   # model id exactly as the server 
 # REMOTE_API_KEY=...                      # only if the server requires a key
 ```
 
-Then `pip install -r requirements.txt` (no model dependencies are used) and `python main.py`. In LM Studio the server must listen on the network ("Serve on Local Network"); an address of `127.0.0.1` is only reachable from the PC itself (from the Mac use the PC's LAN IP or an SSH tunnel, `ssh -L 1234:127.0.0.1:1234 user@pc`, and `REMOTE_URL=http://127.0.0.1:1234/v1`). The server speaks plain HTTP without a token by default, so keep it on a trusted LAN. If the PC is off when the worker starts, the worker still starts and `/embed` fails (the backend retries) until the PC is back. Check the result with `python scripts/smoke_test.py`: the server must pool the last token and append the end-of-text token like Qwen3-Embedding does, which the smoke test's retrieval checks would reveal if it does not.
+Then `pip install -c constraints.txt -r requirements.txt` (no model dependencies are used) and `python main.py`. In LM Studio the server must listen on the network ("Serve on Local Network"); an address of `127.0.0.1` is only reachable from the PC itself (from the Mac use the PC's LAN IP or an SSH tunnel, `ssh -L 1234:127.0.0.1:1234 user@pc`, and `REMOTE_URL=http://127.0.0.1:1234/v1`). The server speaks plain HTTP without a token by default, so keep it on a trusted LAN. If the PC is off when the worker starts, the worker still starts and `/embed` fails (the backend retries) until the PC is back. Check the result with `python scripts/smoke_test.py`: the server must pool the last token and append the end-of-text token like Qwen3-Embedding does, which the smoke test's retrieval checks would reveal if it does not.
 
 **Recommended settings for an RTX 4070 + LM Studio** (measured with `scripts/stress_test.py`, below): worker `REMOTE_CONCURRENCY=2` (the default) and backend `EMBED_BATCH_SIZE=1` (default) with `EMBED_CONCURRENCY=2`. The GPU saturates at about 11 texts/s; one request at a time reaches only ~7.5-8 because the GPU idles between requests, two overlapping requests close that gap, and anything more (bigger batches, more parallel requests) only queues on the GPU and adds latency.
 
@@ -388,8 +408,8 @@ Embedding is the only heavy computation, and the backend already reaches the wor
    cd socud-ai-worker
    python -m venv .venv
    source .venv/bin/activate                                  # Windows: .venv\Scripts\activate
-   pip install torch --index-url https://download.pytorch.org/whl/cu130   # CUDA index matching your driver: pytorch.org/get-started/locally
-   pip install -r requirements-cuda.txt
+   pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cu132   # CUDA index matching your driver: pytorch.org/get-started/locally
+   pip install -c constraints.txt -r requirements-cuda.txt
    ```
 
    Create `socud-ai-worker/.env` (same on Linux and Windows):
@@ -467,9 +487,9 @@ The dimension must still match the `vector(1024)` column; a model with another d
 | `socud-frontend` | `npm run typecheck` | TypeScript check |
 | `socud-frontend` | `npm test` | Unit tests (Vitest) |
 | `socud-frontend` | `npm run build` | Production build |
-| `socud-ai-worker` | `pip install -r requirements-dev.txt && ruff check . && pytest` | Lint and unit tests (no model, no MLX needed) |
+| `socud-ai-worker` | `pip install -c constraints.txt -r requirements-dev.txt && ruff check . && pytest` | Lint and unit tests (no model, no MLX needed) |
 
-GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker (plus a build-only job for the Docker images) on every push and pull request to `main`. The worker job installs only `requirements-dev.txt` (no MLX, which is macOS-only) and runs `ruff` and `pytest`; tests that need MLX skip themselves, and the model is never loaded in CI.
+GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, frontend, and AI worker (plus a build-only job for the Docker images, including the worker's CPU image and the compose file with the `worker` profile) on every push and pull request to `main`. The worker job installs only `requirements-dev.txt` with `constraints.txt` (no MLX, which is macOS-only) and runs `ruff` and `pytest`; tests that need MLX skip themselves, and the model is never loaded in CI.
 
 ## Security model
 
@@ -487,8 +507,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs these checks for the backend, f
 ```
 .
 ├── .github/workflows/   CI workflow
-├── docker-compose.yml   PostgreSQL + pgvector, Redis, backend, frontend (app profile)
-├── socud-ai-worker/     FastAPI embedding service (main.py, requirements.txt)
+├── docker-compose.yml   PostgreSQL + pgvector, Redis, backend, frontend (app profile), ai-worker (worker profile)
+├── socud-ai-worker/     FastAPI embedding service (main.py, requirements*.txt + constraints.txt, Dockerfile for torch)
 ├── socud-backend/       NestJS API + Hocuspocus
 │   ├── prisma/          schema and migrations
 │   ├── src/             auth, document, space, hocuspocus, prisma modules
