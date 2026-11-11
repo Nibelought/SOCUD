@@ -6,6 +6,7 @@ import { EmbeddingBackfillService } from './embedding-backfill.service';
 import { EmbeddingClient } from './embedding.client';
 import { createEmbeddingProvider } from './embedding-provider.factory';
 import { EMBEDDING_PROVIDER } from './embedding-provider.types';
+import { EmbeddingModelGuard } from './embedding-model.guard';
 import { EmbeddingWorker } from './embedding.worker';
 import { QueueService } from './queue.service';
 
@@ -19,6 +20,7 @@ import { QueueService } from './queue.service';
       useFactory: createEmbeddingProvider,
     },
     EmbeddingClient,
+    EmbeddingModelGuard,
     EmbedDocumentHandler,
     EmbeddingWorker,
     EmbeddingBackfillService,
@@ -26,6 +28,7 @@ import { QueueService } from './queue.service';
   exports: [
     QueueService,
     EmbeddingClient,
+    EmbeddingModelGuard,
     EmbeddingBackfillService,
     EmbedDocumentHandler,
   ],

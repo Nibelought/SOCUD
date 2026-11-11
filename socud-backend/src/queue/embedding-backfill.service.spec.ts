@@ -6,6 +6,8 @@ import {
 } from '../test-utils/mocks';
 import { EmbedDocumentHandler } from './embed-document.handler';
 import { EmbeddingBackfillService } from './embedding-backfill.service';
+import { EmbeddingClient } from './embedding.client';
+import { EmbeddingModelGuard } from './embedding-model.guard';
 import { QueueService } from './queue.service';
 
 const m = (fn: unknown) => fn as jest.Mock;
@@ -14,6 +16,7 @@ describe('EmbeddingBackfillService', () => {
   let prisma: jest.Mocked<PrismaService>;
   let queue: { enabled: boolean; enqueueEmbedDocument: jest.Mock };
   let handler: { handle: jest.Mock };
+  let modelGuard: { invalidate: jest.Mock };
   let service: EmbeddingBackfillService;
 
   beforeEach(() => {
@@ -23,11 +26,14 @@ describe('EmbeddingBackfillService', () => {
       enqueueEmbedDocument: jest.fn().mockResolvedValue(true),
     };
     handler = { handle: jest.fn().mockResolvedValue({ status: 'done' }) };
+    modelGuard = { invalidate: jest.fn() };
     service = new EmbeddingBackfillService(
       prisma,
       queue as unknown as QueueService,
       handler as unknown as EmbedDocumentHandler,
       createConfigServiceMock() as unknown as ConfigService,
+      { modelId: 'new-model@1024' } as unknown as EmbeddingClient,
+      modelGuard as unknown as EmbeddingModelGuard,
     );
   });
 
@@ -98,6 +104,82 @@ describe('EmbeddingBackfillService', () => {
       documentId: 'b',
       version: 1,
       rebuildChunks: true,
+    });
+  });
+
+  describe('--reembed-mismatched', () => {
+    const sqlOf = (call: number) =>
+      (m(prisma.$queryRaw).mock.calls[call] as [TemplateStringsArray])[0].join(
+        '?',
+      );
+
+    it('also selects documents holding chunks embedded by another (or an unknown) model', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([]);
+      await service.enqueueMissing({ reembedMismatched: true });
+
+      const [, ...params] = m(prisma.$queryRaw).mock.calls[0] as [
+        TemplateStringsArray,
+        ...unknown[],
+      ];
+      const sql = sqlOf(0);
+      // Still picks documents that are not embedded at all ...
+      expect(sql).toContain('"embeddedVersion" IS NULL');
+      // ... plus those with a vector from a different model; NULL model counts as the legacy one.
+      expect(sql).toContain('EXISTS');
+      expect(sql).toContain('c."embedding" IS NOT NULL');
+      expect(sql).toContain('COALESCE(c."embeddingModel"');
+      // legacy model for NULL rows, active model, keyset cursor, page size
+      expect(params).toEqual([
+        'qwen3-embedding-4b@1024',
+        'new-model@1024',
+        '',
+        200,
+      ]);
+    });
+
+    it('does not look at models without the flag (existing behaviour)', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([]);
+      await service.enqueueMissing();
+      expect(sqlOf(0)).not.toContain('embeddingModel');
+    });
+
+    it('passes the flag on to the queued jobs and the inline handler', async () => {
+      m(prisma.$queryRaw)
+        .mockResolvedValueOnce([{ id: 'a', version: 2 }])
+        .mockResolvedValueOnce([]);
+      await service.enqueueMissing({ reembedMismatched: true });
+      expect(queue.enqueueEmbedDocument).toHaveBeenCalledWith({
+        documentId: 'a',
+        version: 2,
+        rebuildChunks: true,
+        reembedMismatched: true,
+      });
+
+      m(prisma.$queryRaw)
+        .mockResolvedValueOnce([{ id: 'a', version: 2 }])
+        .mockResolvedValueOnce([]);
+      await service.embedMissingInline({ reembedMismatched: true });
+      expect(handler.handle).toHaveBeenCalledWith({
+        documentId: 'a',
+        version: 2,
+        rebuildChunks: true,
+        reembedMismatched: true,
+      });
+    });
+
+    it('is idempotent: once nothing mismatches, nothing is scheduled; the status cache is dropped after a run', async () => {
+      m(prisma.$queryRaw)
+        .mockResolvedValueOnce([{ id: 'a', version: 2 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      await service.embedMissingInline({ reembedMismatched: true });
+      expect(modelGuard.invalidate).toHaveBeenCalledTimes(1);
+
+      handler.handle.mockClear();
+      expect(
+        await service.embedMissingInline({ reembedMismatched: true }),
+      ).toEqual({ found: 0, scheduled: 0 });
+      expect(handler.handle).not.toHaveBeenCalled();
     });
   });
 });

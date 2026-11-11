@@ -97,6 +97,19 @@ describe('QueueService', () => {
       );
     });
 
+    it('gives a re-embed job its own id so a normal job for the same version cannot swallow it', async () => {
+      await service.enqueueEmbedDocument({
+        documentId: 'doc',
+        version: 7,
+        reembedMismatched: true,
+      });
+      expect(queueMock.add).toHaveBeenCalledWith(
+        'embed-document',
+        { documentId: 'doc', version: 7, reembedMismatched: true },
+        { jobId: 'embed-doc-7-reembed' },
+      );
+    });
+
     it('replaces a permanently failed job with the same id', async () => {
       const remove = jest.fn().mockResolvedValue(undefined);
       queueMock.getJob.mockResolvedValue({

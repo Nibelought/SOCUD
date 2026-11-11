@@ -2097,6 +2097,54 @@
           "health"
         ]
       }
+    },
+    "/admin/embedding-status": {
+      "get": {
+        "description": "Compares the embedding model(s) that produced the stored vectors with the model that embeds new content. `mismatch: true` means semantic search mixes vector spaces and is unreliable until the documents are re-embedded; search and embedding are never blocked. System admins only. The result is cached for 30 seconds.",
+        "operationId": "EmbeddingStatus_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingStatusDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Embedding model of the index vs the active model",
+        "tags": [
+          "admin"
+        ]
+      }
     }
   },
   "info": {
@@ -3031,6 +3079,75 @@
         "required": [
           "status",
           "db"
+        ]
+      },
+      "StoredEmbeddingModelDto": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "qwen3-embedding-4b@1024"
+          },
+          "chunks": {
+            "type": "number",
+            "description": "Chunks with a vector produced by this model."
+          },
+          "documents": {
+            "type": "number",
+            "description": "Distinct documents owning those chunks."
+          }
+        },
+        "required": [
+          "model",
+          "chunks",
+          "documents"
+        ]
+      },
+      "EmbeddingStatusDto": {
+        "type": "object",
+        "properties": {
+          "activeModel": {
+            "type": "string",
+            "example": "qwen3-embedding-4b@1024",
+            "description": "Vector space the active provider produces from now on."
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "worker",
+              "api"
+            ]
+          },
+          "dim": {
+            "type": "number",
+            "example": 1024
+          },
+          "stored": {
+            "description": "Models present in the index, largest first. Chunks without a vector are not counted.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoredEmbeddingModelDto"
+            }
+          },
+          "mismatch": {
+            "type": "boolean",
+            "description": "True when the index holds vectors of a model other than the active one."
+          },
+          "recommendedActions": {
+            "description": "Human-readable remedies; empty when there is no mismatch.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "activeModel",
+          "provider",
+          "dim",
+          "stored",
+          "mismatch",
+          "recommendedActions"
         ]
       }
     }

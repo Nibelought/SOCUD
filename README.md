@@ -378,15 +378,42 @@ Things to know:
 
 - **Security.** The traffic is plain HTTP and the token is the only protection. Use a trusted LAN or VPN, restrict the port in the firewall as above, and put a TLS reverse proxy in front (then use an `https://` URL) if the network is not trusted. The worker refuses to listen on a non-loopback address without `WORKER_TOKEN`.
 - **Throughput.** The backend default `EMBED_BATCH_SIZE=1` is tuned for the MLX worker (one chunk blocks it for ~2.5 s). A GPU gains from batching: try `EMBED_BATCH_SIZE=8` to `16` (the worker accepts up to 32 texts per call). Network latency counts against the search query timeout, so keep `EMBED_QUERY_TIMEOUT_MS` above the round trip.
-- **Vectors from different backends.** Both backends run the same model, but the MLX checkpoint is 4-bit quantised and the CUDA one is bf16, so vectors of the same text are expected to be very close but not identical (check with `compare_workers.py`; this has not been measured on the real models). Mixing them in one index should be fine for search, but `SEARCH_MIN_SIMILARITY` (0.35) was calibrated on the 4-bit model; if you switch for good, re-embed the corpus so everything comes from one model. There is no force flag, so clear the vectors and let the backfill refill them. Semantic search returns nothing until the backfill has finished (keyword search keeps working), so do it when that is acceptable:
+- **Vectors from different backends.** Both backends run the same model, but the MLX checkpoint is 4-bit quantised and the CUDA one is bf16, so vectors of the same text are expected to be very close but not identical (check with `compare_workers.py`; this has not been measured on the real models). Mixing them in one index should be fine for search, but `SEARCH_MIN_SIMILARITY` (0.35) was calibrated on the 4-bit model; if you switch for good, re-embed the corpus so everything comes from one model. Both backends report the same model id (`qwen3-embedding-4b@1024`), so the model-mismatch warning (see "Switching embedding models") does not fire for this switch, and `--reembed-mismatched` would skip every chunk. To force a re-embed, clear the vectors and let the backfill refill them. Semantic search returns nothing until the backfill has finished (keyword search keeps working), so do it when that is acceptable:
 
   ```sql
-  UPDATE "DocumentChunk" SET "embedding" = NULL;
+  UPDATE "DocumentChunk" SET "embedding" = NULL, "embeddingModel" = NULL;
   UPDATE "Document" SET "embeddedVersion" = NULL;
   ```
 
   then run `npm run backfill:embeddings` in `socud-backend` (or restart the API: it reconciles about 10 s after start).
 - **Out of memory.** Other applications on the GPU machine share the 12 GB. A batch that does not fit is split in two automatically; if `/embed` still fails with out-of-memory errors, lower `INFERENCE_TOKEN_BUDGET` (e.g. `4096`) or `INFERENCE_BATCH_SIZE`.
+
+## Switching embedding models
+
+Every stored vector records the model that produced it (`DocumentChunk.embeddingModel`, e.g. `qwen3-embedding-4b@1024`; the id is `<model>@<dimensions>`). Vectors of different models live in different spaces and cannot be compared, so after the embedding model changes (another worker backend or hosted API, a different `EMBEDDING_API_MODEL`, a different dimension), the existing index and the new query/document vectors no longer match. SOCUD does not block anything in that case: search and embedding keep working, but semantic results that mix the two spaces are unreliable. It warns instead:
+
+- **Startup log.** If the index holds vectors of a model other than the active one, the API logs a `WARN` naming the stored model(s) with chunk and document counts, the active model and the recommended actions.
+- **While embedding.** The first document embedded while other models are present logs the same `WARN`, then at most one more every 10 minutes (never one per chunk).
+- **Admin endpoint.** `GET /admin/embedding-status` (system administrators only, 403 for everyone else, cached for 30 s) returns `{ activeModel, provider, dim, stored: [{ model, chunks, documents }], mismatch, recommendedActions }`. Chunks without a vector are not counted.
+- **Dashboard banner.** Admins see a dismissible warning on the dashboard with the stored and the active model and the recommended actions while `mismatch` is true. Non-admins, and a failed request, show nothing. A dismissal is remembered per browser for that exact combination of models, so a further change brings the banner back.
+
+Rows that have a vector but no recorded model (written before this feature, or by an older build during a rolling deploy) are counted as `qwen3-embedding-4b@1024`, which is what the migration assigns to all existing vectors.
+
+Recommended actions when the warning appears:
+
+1. **Re-embed everything with the active model** (recommended after a deliberate switch):
+
+   ```bash
+   cd socud-backend
+   npm run backfill:embeddings -- --reembed-mismatched            # enqueue jobs for a running API
+   npm run backfill:embeddings -- --reembed-mismatched --inline   # or embed in this process, no Redis needed
+   ```
+
+   Besides documents with missing embeddings, this picks every document that has chunks from another model and overwrites those vectors in place, so no document is left without vectors while it runs. It is idempotent and resumable: chunks already on the active model are skipped, so after an interruption (or a worker outage) just run it again. The banner and the warning disappear once no other model remains (within 30 s).
+2. **Switch back** by setting `EMBEDDING_PROVIDER` / `EMBEDDING_API_MODEL` to the model the index was built with and restarting the API.
+3. **Declare the same vector space.** If two configurations really produce the same space (for example OpenRouter's `qwen/qwen3-embedding-4b` and the local Qwen3 worker), set `EMBEDDING_MODEL_ID` to the stored id (e.g. `qwen3-embedding-4b@1024`) so the new vectors are recorded under it and no warning is raised. Only do this if you know the vectors are interchangeable.
+
+The dimension must still match the `vector(1024)` column; a model with another dimension needs a schema change on top of this.
 
 ## Common scripts
 
@@ -399,6 +426,7 @@ Things to know:
 | `socud-backend` | `npm run build` | Production build |
 | `socud-backend` | `npm run openapi:export` | Rebuild and write `openapi.json` (no database or Redis needed) |
 | `socud-backend` | `npm run db:seed` | Create the first admin (see "First admin") |
+| `socud-backend` | `npm run backfill:embeddings` | Embed documents that lack vectors; `-- --inline` skips Redis, `-- --reembed-mismatched` re-embeds chunks of another model (see "Switching embedding models") |
 | `socud-frontend` | `npm run api:gen` | Regenerate `src/lib/api/schema.d.ts` from `../socud-backend/openapi.json` |
 | `socud-frontend` | `npm run lint` | ESLint |
 | `socud-frontend` | `npm run typecheck` | TypeScript check |
