@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { getSchema } from '@tiptap/core';
 import { prosemirrorJSONToYXmlFragment } from 'y-prosemirror';
 import * as Y from 'yjs';
@@ -122,6 +123,77 @@ describe('DocumentService', () => {
         isArchived: false,
         space: { name: 'Space' },
       });
+    });
+  });
+
+  describe('getKnowledgeGraph', () => {
+    const graphRow = {
+      nodes: [{ id: 'a', name: 'A', group: 's', spaceName: 'S' }],
+      links: [{ source: 'a', target: 'a' }],
+      truncated: false,
+    };
+    const sqlOf = () => {
+      const [sql] = m(prisma.$queryRaw).mock.calls[0] as [Prisma.Sql];
+      return sql;
+    };
+
+    it('returns the nodes, links and truncated flag computed by the database', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([graphRow]);
+      await expect(service.getKnowledgeGraph('user')).resolves.toEqual(
+        graphRow,
+      );
+    });
+
+    it('is an empty, untruncated graph when the query returns no row', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([]);
+      await expect(service.getKnowledgeGraph('user')).resolves.toEqual({
+        nodes: [],
+        links: [],
+        truncated: false,
+      });
+    });
+
+    it('filters access and edges in SQL with bound parameters, never a JS id list', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([graphRow]);
+      await service.getKnowledgeGraph('user-42');
+
+      const { sql, values } = sqlOf();
+      // access filter = accessibleDocumentsSql: archived, admin, space member, document member
+      expect(sql).toContain('"isArchived" = false');
+      expect(sql).toContain('"SpaceMember"');
+      expect(sql).toContain('"DocumentMember"');
+      // both link ends must be kept nodes
+      expect(sql).toMatch(/JOIN kept ks ON ks\."id" = l\."sourceDocId"/);
+      expect(sql).toMatch(/JOIN kept kt ON kt\."id" = l\."targetDocId"/);
+      expect(sql).not.toMatch(/\bIN\s*\(/i);
+      expect(sql).not.toContain('user-42'); // parameterized, not interpolated
+      expect(values).toContain('user-42');
+      expect(m(prisma.document.findMany)).not.toHaveBeenCalled();
+      expect(m(prisma.documentLink.findMany)).not.toHaveBeenCalled();
+    });
+
+    it('defaults to 2000 nodes and probes one more row to detect truncation', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([graphRow]);
+      await service.getKnowledgeGraph('user');
+      const { values } = sqlOf();
+      expect(values).toEqual(expect.arrayContaining([2001, 2000]));
+    });
+
+    it('passes the requested limit and reports truncation', async () => {
+      m(prisma.$queryRaw).mockResolvedValue([{ ...graphRow, truncated: true }]);
+      const graph = await service.getKnowledgeGraph('user', 10);
+      expect(graph.truncated).toBe(true);
+      expect(sqlOf().values).toEqual(expect.arrayContaining([11, 10]));
+    });
+
+    it.each([
+      [0, 1],
+      [-5, 1],
+      [999_999, 5000],
+    ])('clamps limit %p to %p', async (given, used) => {
+      m(prisma.$queryRaw).mockResolvedValue([graphRow]);
+      await service.getKnowledgeGraph('user', given);
+      expect(sqlOf().values).toEqual(expect.arrayContaining([used + 1, used]));
     });
   });
 

@@ -1176,9 +1176,21 @@
     },
     "/document/graph": {
       "get": {
-        "description": "Nodes and links shaped for react-force-graph.",
+        "description": "Nodes and links shaped for react-force-graph. At most `limit` nodes (default 2000, max 5000), the most recently updated first; `truncated` is true when more existed.",
         "operationId": "Document_getGraph",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Maximum number of nodes; the most recently updated documents are kept.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 5000,
+              "type": "number"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1186,6 +1198,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/KnowledgeGraphDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
                 }
               }
             }
@@ -2954,11 +2976,16 @@
             "items": {
               "$ref": "#/components/schemas/GraphLinkDto"
             }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when more readable documents existed than `limit`: the graph shows the most recently updated ones."
           }
         },
         "required": [
           "nodes",
-          "links"
+          "links",
+          "truncated"
         ]
       },
       "SearchResultDto": {

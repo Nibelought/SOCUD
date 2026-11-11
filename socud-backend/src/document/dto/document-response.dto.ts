@@ -161,6 +161,10 @@ export class KnowledgeGraphDto {
 
   @ApiProperty({ type: () => [GraphLinkDto] })
   links: GraphLinkDto[];
+
+  /** True when more readable documents existed than `limit`: the graph shows the most recently updated ones. */
+  @ApiProperty()
+  truncated: boolean;
 }
 
 /** GET /document/search item. */

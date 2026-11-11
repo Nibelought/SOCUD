@@ -25,6 +25,7 @@ import {
 import { DocumentService } from './document.service';
 import {
   CreateDocumentDto,
+  GraphQueryDto,
   ManageDocumentMemberDto,
   PublishDocumentDto,
   UpdateDocumentDto,
@@ -98,12 +99,16 @@ export class DocumentController {
   @Get('graph')
   @ApiOperation({
     summary: 'Link graph of the documents the caller can read',
-    description: 'Nodes and links shaped for react-force-graph.',
+    description:
+      'Nodes and links shaped for react-force-graph. At most `limit` nodes (default 2000, max 5000), the most recently updated first; `truncated` is true when more existed.',
   })
   @ApiOkResponse({ type: KnowledgeGraphDto })
-  @ApiErrors()
-  async getGraph(@CurrentUser('id') userId: string) {
-    return this.documentService.getKnowledgeGraph(userId);
+  @ApiErrors({ badRequest: true })
+  async getGraph(
+    @CurrentUser('id') userId: string,
+    @Query() query: GraphQueryDto,
+  ) {
+    return this.documentService.getKnowledgeGraph(userId, query.limit);
   }
 
   @Get('search')

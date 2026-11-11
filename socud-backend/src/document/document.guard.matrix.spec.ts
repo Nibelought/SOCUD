@@ -339,6 +339,20 @@ describe('DocumentController authorization (RoleGuard, HTTP level)', () => {
       },
     );
 
+    it('GET /document/graph validates ?limit and passes it to the service', async () => {
+      arrange(SCENARIOS[3]);
+      for (const bad of ['0', '5001', 'x', '1.5']) {
+        const res = await send({
+          method: 'get',
+          path: `/document/graph?limit=${bad}`,
+        });
+        expect(res.status).toBe(400);
+      }
+      const ok = await send({ method: 'get', path: '/document/graph?limit=7' });
+      expect(ok.status).toBe(200);
+      expect(service.getKnowledgeGraph).toHaveBeenCalledWith(ACTOR, 7);
+    });
+
     it.each(open)('%s needs a token (401)', async (_n, path) => {
       const res = await send({ method: 'get', path }, '');
       expect(res.status).toBe(401);
