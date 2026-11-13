@@ -84,6 +84,7 @@ export class DocumentService {
       contentHtml: document.contentHtml,
       updatedAt: document.updatedAt,
       isArchived: document.isArchived,
+      spaceId: document.spaceId,
       space: {
         name: document.space?.name || 'Unknown Space',
       },

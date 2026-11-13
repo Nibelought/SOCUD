@@ -105,6 +105,10 @@ export class DocumentViewDto {
   @ApiProperty()
   isArchived: boolean;
 
+  /** Space the document belongs to (lets the client link back to it). */
+  @ApiProperty({ format: 'uuid' })
+  spaceId: string;
+
   @ApiProperty({ type: () => DocumentSpaceNameDto })
   space: DocumentSpaceNameDto;
 }

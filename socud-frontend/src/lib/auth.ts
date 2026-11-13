@@ -18,8 +18,16 @@ if (isBrowser) {
 
 export const getAccessToken = (): string | null => localStorage.getItem(TOKEN_KEY);
 
+/** Fired on `window` when this tab stores a new access token (the `storage` event covers other tabs). */
+export const TOKEN_EVENT = 'socud:token';
+
 export const setAccessToken = (access: string) => {
     localStorage.setItem(TOKEN_KEY, access);
+    try {
+        window.dispatchEvent(new Event(TOKEN_EVENT));
+    } catch {
+        // no window (tests, server): nothing listens
+    }
 };
 
 /**

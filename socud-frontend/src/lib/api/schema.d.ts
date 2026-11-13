@@ -745,6 +745,11 @@ export interface components {
              *     the flag instead of assuming it.
              */
             isArchived: boolean;
+            /**
+             * Format: uuid
+             * @description Space the document belongs to (lets the client link back to it).
+             */
+            spaceId: string;
             space: components["schemas"]["DocumentSpaceNameDto"];
         };
         DocumentMemberViewDto: {

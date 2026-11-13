@@ -3083,6 +3083,11 @@
             "type": "boolean",
             "description": "Whether the document is in the trash. Archived documents are hidden from everyone on this\nroute (404), so a successful read always reports `false` today; the field lets clients rely on\nthe flag instead of assuming it."
           },
+          "spaceId": {
+            "type": "string",
+            "description": "Space the document belongs to (lets the client link back to it).",
+            "format": "uuid"
+          },
           "space": {
             "$ref": "#/components/schemas/DocumentSpaceNameDto"
           }
@@ -3093,6 +3098,7 @@
           "contentHtml",
           "updatedAt",
           "isArchived",
+          "spaceId",
           "space"
         ]
       },

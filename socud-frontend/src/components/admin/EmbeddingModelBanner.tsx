@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, X } from "lucide-react";
 import { api } from "@/lib/api/client";
 import {
     describeStoredModels,
@@ -10,6 +9,8 @@ import {
     rememberDismissal,
     type EmbeddingStatus,
 } from "@/lib/embeddingStatus";
+import { Button } from "@/components/ui/Button";
+import { Notice } from "@/components/ui/Feedback";
 
 /**
  * Warning for system admins when the search index holds vectors from another embedding model than
@@ -47,37 +48,32 @@ export default function EmbeddingModelBanner() {
         setStatus(null);
     };
 
+    const code = "rounded bg-fill px-1 font-mono text-footnote text-label";
+
     return (
-        <div role="alert" className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-4 shadow-sm flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
-            <div className="flex-1 text-sm space-y-2">
-                <p className="font-semibold">Embedding model changed: semantic search results may be unreliable</p>
-                <p>
-                    The search index was built with <code className="font-mono">{describeStoredModels(status)}</code>, but new
-                    text is now embedded with <code className="font-mono">{status.activeModel}</code>
-                    {status.profile ? (
-                        <>
-                            {' '}
-                            (embedding profile <code className="font-mono">{status.profile}</code>)
-                        </>
-                    ) : null}
-                    . Vectors from different
-                    models are not comparable, so results mixing them are unreliable. Search keeps working.
-                </p>
-                <p className="font-medium">Recommended actions</p>
-                <ol className="list-decimal pl-5 space-y-1">
-                    {status.recommendedActions.map((action) => (
-                        <li key={action}>{action}</li>
-                    ))}
-                </ol>
-            </div>
-            <button
-                onClick={dismiss}
-                aria-label="Dismiss embedding model warning"
-                className="p-1 rounded hover:bg-amber-100 text-amber-700 transition-colors"
-            >
-                <X className="w-4 h-4" />
-            </button>
-        </div>
+        <Notice
+            tone="warning"
+            title="Semantic search may return unreliable results"
+            className="mb-8"
+            action={<Button size="sm" onClick={dismiss}>Dismiss</Button>}
+        >
+            <p>
+                The search index was built with <code className={code}>{describeStoredModels(status)}</code>, but new
+                text is now embedded with <code className={code}>{status.activeModel}</code>
+                {status.profile ? (
+                    <>
+                        {' '}
+                        (embedding profile <code className={code}>{status.profile}</code>)
+                    </>
+                ) : null}
+                . Vectors from different models aren’t comparable. Keyword search is unaffected.
+            </p>
+            <p className="mt-2 font-medium text-label">Recommended actions</p>
+            <ol className="mt-1 list-decimal space-y-1 pl-5">
+                {status.recommendedActions.map((action) => (
+                    <li key={action}>{action}</li>
+                ))}
+            </ol>
+        </Notice>
     );
 }

@@ -50,7 +50,8 @@ export function createEditorExtensions({ ydoc, provider, userName, userColor, ma
             autolink: true,
             protocols: SAFE_LINK_PROTOCOLS,
             validate: isSafeHref,
-            HTMLAttributes: { class: 'text-blue-600 underline hover:text-blue-800 transition-colors cursor-pointer' },
+            // Styled by .doc-content a (globals.css), the same in the editor and the reader.
+            HTMLAttributes: { rel: 'noopener noreferrer' },
         }),
         Collaboration.configure({ document: ydoc }),
         CollaborationCursor.configure({ provider, user: { name: userName, color: userColor } }),
